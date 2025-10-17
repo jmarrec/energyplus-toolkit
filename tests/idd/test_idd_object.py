@@ -3,10 +3,10 @@ from energyplus_parser.idd.idd_field import IddField
 from energyplus_parser.idd.idd_object import IddObject, IddObjectProperties
 
 
-def test_idd_object_properties():
+def test_idd_object_properties() -> None:
     obj_props = IddObjectProperties()
 
-    obj_props.memo: str = "This is a test memo."
+    obj_props.memo = "This is a test memo."
     obj_props.unique = True
     obj_props.required = True
     obj_props.obsolete = False
@@ -30,7 +30,7 @@ def test_idd_object_properties():
     assert str(obj_props) == expected
 
 
-def test_parse_idd_object_required_unique():
+def test_parse_idd_object_required_unique() -> None:
     name = "Building"
     group = "Simulation Parameters"
     ori_text = r"""Building,
@@ -145,7 +145,7 @@ def test_parse_idd_object_required_unique():
     assert str(idd_obj) == ori_text
 
 
-def test_parse_idd_object_with_one_extensible():
+def test_parse_idd_object_with_one_extensible() -> None:
     name = "Site:SpectrumData"
     group = "Simulation Parameters"
     ori_text = r"""Site:SpectrumData,

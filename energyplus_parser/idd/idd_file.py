@@ -17,7 +17,7 @@ from energyplus_parser.idd.idd_regex import (
 
 
 class IddFile:
-    def __init__(self):
+    def __init__(self) -> None:
         # Version string required to be at top of any IddFile.
         self.version: str = ""
         # Build string which might be at the top of an IddFile.
@@ -41,7 +41,7 @@ class IddFile:
         idd_file._parse(text=text)
         return idd_file
 
-    def _parse(self, text: str):
+    def _parse(self, text: str) -> None:
         lines = text.splitlines()
         header_lines = []
         header_closed = False
@@ -78,16 +78,16 @@ class IddFile:
                 # print(f"Header closed on {line_number}")
                 header_closed = True
                 continue
-            elif RE_BUILD.search(line):
-                self.build = RE_BUILD.search(line).group(1)
+            elif m := RE_BUILD.search(line):
+                self.build = m.group(1)
                 header_lines.append(line)
             elif RE_COMMENT_ONLY_LINE.fullmatch(line):
                 if not header_closed:
                     header_lines.append(line)
                 continue
-            elif RE_GROUP.search(line):
+            elif m := RE_GROUP.search(line):
                 header_closed = True
-                current_group = RE_GROUP.search(line).group(1).strip()
+                current_group = m.group(1).strip()
                 # print(f"{current_group=}")
                 continue
             else:
@@ -104,7 +104,7 @@ class IddFile:
 
                 # Collect full text of the object
                 text_lines = [line]
-                found_closing_line = RE_OBJECT_NO_FIELDS.match(line) or RE_CLOSING_FIELD.match(line)
+                found_closing_line = bool(RE_OBJECT_NO_FIELDS.match(line)) or bool(RE_CLOSING_FIELD.match(line))
 
                 while line_number < total_lines:
                     next_line = lines[line_number].strip()

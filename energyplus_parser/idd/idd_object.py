@@ -31,7 +31,7 @@ LOG.setLevel(logging.INFO)
 
 
 class IddObjectProperties:
-    def __init__(self):
+    def __init__(self) -> None:
         # Returns the memo associated with this object.
         self.memo: str = ""
 
@@ -105,12 +105,13 @@ class IddObject:
         # Single extensible fields group
         self.extensible_fields: list[IddField] = []
 
-    def load(name: str, group: str, text: str):
+    @staticmethod
+    def load(name: str, group: str, text: str) -> "IddObject":
         idd_object = IddObject(name=name, group=group)
         idd_object._parse(text=text)
         return idd_object
 
-    def _parse(self, text: str) -> "IddObject":
+    def _parse(self, text: str) -> None:
         if m := RE_OBJECT_AND_FIELDS.search(text):
             # find and parse the object text
             object_text, fields_text = m.groups()

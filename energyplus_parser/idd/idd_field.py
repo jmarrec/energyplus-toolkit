@@ -60,7 +60,7 @@ class BoundTypes(IntEnum):
 
 
 class IddFieldProperties:
-    def __init__(self):
+    def __init__(self) -> None:
         self.type: IddFieldType = IddFieldType.UnknownType
 
         # Field notes collected into one string
@@ -354,13 +354,11 @@ class IddField:
                     self.properties.minBoundType = BoundTypes.ExclusiveBound
                     min_exclusive = m_exc.group(1).strip()
                     self.properties.minBoundValue = float(min_exclusive)
-                    self.properties.minBoundText = min_exclusive
                     not_handled = False
                 elif m_inc:
                     self.properties.minBoundType = BoundTypes.InclusiveBound
                     min_inclusive = m_inc.group(1).strip()
                     self.properties.minBoundValue = float(min_inclusive)
-                    self.properties.minBoundText = min_inclusive
                     not_handled = False
             elif lower_text.startswith("maximum"):
                 m_exc = RE_MAX_EXCLUSIVE_PROPERTY.search(text)
@@ -369,13 +367,11 @@ class IddField:
                     self.properties.maxBoundType = BoundTypes.ExclusiveBound
                     max_exclusive = m_exc.group(1).strip()
                     self.properties.maxBoundValue = float(max_exclusive)
-                    self.properties.maxBoundText = max_exclusive
                     not_handled = False
                 elif m_inc:
                     self.properties.maxBoundType = BoundTypes.InclusiveBound
                     max_inclusive = m_inc.group(1).strip()
                     self.properties.maxBoundValue = float(max_inclusive)
-                    self.properties.maxBoundText = max_inclusive
                     not_handled = False
             elif lower_text.startswith("memo"):
                 m = RE_MEMO_PROPERTY.search(text)
@@ -454,12 +450,13 @@ class IddField:
         if not_handled:
             raise ValueError(f"Unknown field property text '{text}' detected in field '{self.name}'")
 
-    def load(name: str, text: str, objectName: str):
+    @staticmethod
+    def load(name: str, text: str, objectName: str) -> "IddField":
         field = IddField(name=name, objectName=objectName)
         field._parse(text=text)
         return field
 
-    def _parse(self, text: str) -> "IddField":
+    def _parse(self, text: str) -> None:
 
         # Match the field definition
         match = RE_FIELD.search(text)
