@@ -85,6 +85,9 @@ class IddObject:
         # Single extensible fields group
         self.extensible_fields: list[IddField] = []
 
+        # This is ONLY to please the IDF Editor, but that's what it is...
+        self._original_number_of_fields: int = 0
+
     @staticmethod
     def load(group: str, object_lines: list[str]) -> "IddObject":
         idd_object = IddObject(group=group)
@@ -156,6 +159,7 @@ class IddObject:
         expanded_lines = []
         for line in object_lines[start_index:]:
             matches = list(RE_FIELD_START.finditer(line))
+            self._original_number_of_fields += len(matches)
             if len(matches) <= 1:
                 expanded_lines.append(line)
                 continue
@@ -229,6 +233,15 @@ class IddObject:
     def __str__(self) -> str:
         lines = []
 
+        num_fields = len(self.fields) + len(self.extensible_fields)
+        adding_extra = False
+        if num_fields < self._original_number_of_fields:
+            LOG.debug(
+                f"Adjusting number of fields for object '{self.name}' from {num_fields} to original "
+                f"{self._original_number_of_fields}"
+            )
+            adding_extra = True
+
         if not self.fields and not self.extensible_fields:
             lines.append(f"{self.name};")
             lines.append(str(self.properties))
@@ -243,7 +256,41 @@ class IddObject:
 
             # print extensible fields
             for i, field in enumerate(self.extensible_fields):
+                if adding_extra:
+                    prev_status = field.is_last_field
+                    field.is_last_field = False
                 lines.append(str(field))
+                if adding_extra:
+                    field.is_last_field = prev_status
+
+            # Adjust number of fields to original if needed
+            if adding_extra:
+
+                assert self.extensible_fields, "Cannot adjust number of fields if no extensible fields are defined"
+                numerator = self._original_number_of_fields - num_fields
+                denominator = self.properties.numExtensible
+                if numerator % denominator != 0:
+                    raise ValueError(
+                        f"Cannot adjust number of fields to original {self._original_number_of_fields} "
+                        f"with current fields {num_fields} and extensible group size {denominator}"
+                    )
+                extra_groups = int(numerator / denominator)
+                extra_field_ids = []
+                for i in range(extra_groups):
+                    for field in self.extensible_fields:
+                        field_num = int(field.field_id[1:]) + i + 1
+                        field_id = f"{field.field_id[0]}{field_num}".ljust(
+                            4 if self._original_number_of_fields > 100 else 3
+                        )
+                        extra_field_ids.append(field_id)
+
+                # Break into chunks of 10
+                chunk_size = 10
+                for i in range(0, len(extra_field_ids), chunk_size):
+                    chunk = extra_field_ids[i : i + chunk_size]
+                    line = "  " + ", ".join(chunk) + ","
+                    lines.append(line)
+                lines[-1] = lines[-1].rstrip(',') + ';'  # change last line to end with semicolon
 
             lines.append("")  # blank line at the end
 
