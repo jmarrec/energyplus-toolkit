@@ -2,30 +2,6 @@ import logging
 from enum import IntEnum, StrEnum
 
 from energyplus_parser.constants import BLOCK_INDENT, format_leading
-from energyplus_parser.idd.idd_regex import (
-    RE_AUTOMATIC_DEFAULT,
-    RE_COMMENT_ONLY_LINE,
-    RE_CONTENT_AND_COMMENT_LINE,
-    RE_DEFAULT_PROPERTY,
-    RE_EXTERNAL_LIST_PROPERTY,
-    RE_FIELD,
-    RE_IP_UNITS_PROPERTY,
-    RE_KEY_PROPERTY,
-    RE_MAX_EXCLUSIVE_PROPERTY,
-    RE_MAX_INCLUSIVE_PROPERTY,
-    RE_MEMO_PROPERTY,
-    RE_METADATA_COMMENT,
-    RE_MIN_EXCLUSIVE_PROPERTY,
-    RE_MIN_INCLUSIVE_PROPERTY,
-    RE_NAME_PROPERTY,
-    RE_NOTE_PROPERTY,
-    RE_OBJECT_LIST_PROPERTY,
-    RE_REFERENCE_CLASS_NAME_PROPERTY,
-    RE_REFERENCE_PROPERTY,
-    RE_TYPE_PROPERTY,
-    RE_UNITS_PROPERTY,
-    RE_WHITESPACE_ONLY_BLOCK,
-)
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)
@@ -215,9 +191,9 @@ class IddKey:
     This is currently just a string but it provides strong equality semantics.
     """
 
-    def __init__(self, name: str):
-        self.name = name
-        self.note: str = ""
+    def __init__(self, name: str, note: str = ""):
+        self.name: str = name
+        self.note: str = note
 
     def __eq__(self, other):
         if not isinstance(other, IddKey):
@@ -230,23 +206,10 @@ class IddKey:
     def __str__(self):
         return f"{BLOCK_INDENT}\\key {self.name}"
 
-    @staticmethod
-    def load(name: str, text: str):
-        key = IddKey(name=name)
-        m = RE_CONTENT_AND_COMMENT_LINE.search(text)
-        assert m, f"Key name could not be determined from text '{text}'"
-        key_name = m.group(1).strip()
-        if key_name != name:
-            raise ValueError(f"Key name '{key_name}' does not match expected '{name}'")
-
-        note = m.group(2)
-        key.note = note
-        return key
-
 
 class IddField:
-    def __init__(self, name: str, objectName: str):
-        self.name: str = name
+    def __init__(self, objectName: str):
+        self.name: str = ""
         self.field_id: str = ""
         self.objectName: str = objectName  # Name of IddObject to which this field belongs
         self.properties: IddFieldProperties = IddFieldProperties()
@@ -278,18 +241,16 @@ class IddField:
 
         # === d ===
         elif index == 'd':
-            if lower_text.startswith("default"):
-                m = RE_DEFAULT_PROPERTY.search(text)
-                assert m, f"Invalid default property line: {text}"
-                string_default = m.group(1).strip()
+            if lower_text.startswith(tag := "default"):
+                string_default = text[len(tag) :].split('!')[0].strip()
                 self.properties.stringDefault = string_default
                 not_handled = False
 
-                if self.properties.type in ("real", "integer"):
-                    if not RE_AUTOMATIC_DEFAULT.match(text):
-                        self.properties.numericDefault = float(string_default)
-                    else:
+                if self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
+                    if any(x in lower_text for x in ['autosize', 'autocalculate']):
                         self.properties.numericDefault = -9999.0
+                    else:
+                        self.properties.numericDefault = float(string_default)
 
             elif lower_text.startswith("deprecated"):
                 self.properties.deprecated = True
@@ -297,19 +258,15 @@ class IddField:
 
         # === e ===
         elif index == 'e':
-            if lower_text.startswith("external-list"):
-                m = RE_EXTERNAL_LIST_PROPERTY.search(text)
-                assert m, f"Invalid external-list property line: {text}"
-                external_list = m.group(1).strip()
+            if lower_text.startswith(tag := "external-list"):
+                external_list = text[len(tag) :].split('!')[0].strip()
                 self.properties.externalLists.append(external_list)
                 not_handled = False
 
         # === f ===
         elif index == 'f':
-            if lower_text.startswith("field"):
-                m = RE_NAME_PROPERTY.search(text)
-                assert m, f"Invalid field name property: {text}"
-                field_name = m.group(1).strip()
+            if lower_text.startswith(tag := "field"):
+                field_name = text[len(tag) :].split('!')[0].strip()
                 not_handled = False
                 if self.name != field_name:
                     raise ValueError(
@@ -319,76 +276,46 @@ class IddField:
 
         # === i ===
         elif index == 'i':
-            if lower_text.startswith("ip-units"):
-                m = RE_IP_UNITS_PROPERTY.search(text)
-                assert m, f"Invalid ip-units property: {text}"
-                ip_units = m.group(1).strip()
-                self.properties.ipUnits = ip_units
+            if lower_text.startswith(tag := "ip-units"):
+                self.properties.ipUnits = text[len(tag) :].split('!')[0].strip()
                 not_handled = False
 
         # === k ===
         elif index == 'k':
-            if lower_text.startswith("key"):
-                m = RE_KEY_PROPERTY.search(text)
-                assert m, f"Invalid key property: {text}"
-                key_text = m.group(1)
+            if lower_text.startswith(tag := "key"):
+                key_name = text[len(tag) :].split('!')[0].strip()
+                if not key_name:
+                    raise ValueError(f"Key name is empty in field '{self.name}' of object '{self.objectName}'")
+                key_note = ""
+                if '!' in text:
+                    key_note = text.split('!')[1].strip()
+                self.keys.append(IddKey(name=key_name, note=key_note))
                 not_handled = False
-
-                key_match = RE_CONTENT_AND_COMMENT_LINE.search(key_text)
-                if key_match:
-                    key_name = key_match.group(1).strip()
-
-                    key = IddKey.load(key_name, key_text)
-                    if key is not None:
-                        self.keys.append(key)
-                    else:
-                        raise ValueError(f"Key could not be loaded from text '{key_text}'.")
-                else:
-                    raise ValueError(f"Key name could not be determined from text '{key_text}'.")
         # === m ===
         elif index == 'm':
-            if lower_text.startswith("minimum"):
-                m_exc = RE_MIN_EXCLUSIVE_PROPERTY.search(text)
-                m_inc = RE_MIN_INCLUSIVE_PROPERTY.search(text)
-                if m_exc:
-                    self.properties.minBoundType = BoundTypes.ExclusiveBound
-                    min_exclusive = m_exc.group(1).strip()
-                    self.properties.minBoundValue = float(min_exclusive)
-                    not_handled = False
-                elif m_inc:
-                    self.properties.minBoundType = BoundTypes.InclusiveBound
-                    min_inclusive = m_inc.group(1).strip()
-                    self.properties.minBoundValue = float(min_inclusive)
-                    not_handled = False
-            elif lower_text.startswith("maximum"):
-                m_exc = RE_MAX_EXCLUSIVE_PROPERTY.search(text)
-                m_inc = RE_MAX_INCLUSIVE_PROPERTY.search(text)
-                if m_exc:
-                    self.properties.maxBoundType = BoundTypes.ExclusiveBound
-                    max_exclusive = m_exc.group(1).strip()
-                    self.properties.maxBoundValue = float(max_exclusive)
-                    not_handled = False
-                elif m_inc:
-                    self.properties.maxBoundType = BoundTypes.InclusiveBound
-                    max_inclusive = m_inc.group(1).strip()
-                    self.properties.maxBoundValue = float(max_inclusive)
-                    not_handled = False
-            elif lower_text.startswith("memo"):
-                m = RE_MEMO_PROPERTY.search(text)
-                assert m, f"Invalid memo property: {text}"
-                memo = m.group(1).strip()
-                if not self.properties.note:
-                    self.properties.note = memo
-                else:
-                    self.properties.note += "\n" + memo
+            if lower_text.startswith(tag := "minimum>"):
+                self.properties.minBoundType = BoundTypes.ExclusiveBound
+                self.properties.minBoundValue = float(text[len(tag) :].split('!')[0].strip())
+                not_handled = False
+            elif lower_text.startswith(tag := "minimum"):
+                self.properties.minBoundType = BoundTypes.InclusiveBound
+                self.properties.minBoundValue = float(text[len(tag) :].split('!')[0].strip())
+                not_handled = False
+            elif lower_text.startswith(tag := "maximum<"):
+                self.properties.maxBoundType = BoundTypes.ExclusiveBound
+                self.properties.maxBoundValue = float(text[len(tag) :].split('!')[0].strip())
+                not_handled = False
+            elif lower_text.startswith(tag := "maximum"):
+                self.properties.maxBoundType = BoundTypes.InclusiveBound
+                self.properties.maxBoundValue = float(text[len(tag) :].split('!')[0].strip())
                 not_handled = False
 
+            elif lower_text.startswith("memo"):
+                raise ValueError("Memo property is deprecated; use Note property instead.")
         # === n ===
         elif index == 'n':
-            if lower_text.startswith("note"):
-                m = RE_NOTE_PROPERTY.search(text)
-                assert m, f"Invalid note property: {text}"
-                note = m.group(1).strip()
+            if lower_text.startswith(tag := "note"):
+                note = text[len(tag) :].strip()
                 if not self.properties.note:
                     self.properties.note = note
                 else:
@@ -397,10 +324,8 @@ class IddField:
 
         # === o ===
         elif index == 'o':
-            if lower_text.startswith("object-list"):
-                m = RE_OBJECT_LIST_PROPERTY.search(text)
-                assert m, f"Invalid object-list property: {text}"
-                object_list = m.group(1).strip()
+            if lower_text.startswith(tag := "object-list"):
+                object_list = text[len(tag) :].strip().split('!')[0].strip()
                 self.properties.objectLists.append(object_list)
                 not_handled = False
 
@@ -409,16 +334,12 @@ class IddField:
             if lower_text.startswith("required-field"):
                 self.required = True
                 not_handled = False
-            elif lower_text.startswith("reference-class-name"):
-                m = RE_REFERENCE_CLASS_NAME_PROPERTY.search(text)
-                assert m, f"Invalid reference-class-name property: {text}"
-                reference = m.group(1).strip()
+            elif lower_text.startswith(tag := "reference-class-name"):
+                reference = text[len(tag) :].split('!')[0].strip()
                 self.properties.referenceClassNames.append(reference)
                 not_handled = False
-            elif lower_text.startswith("reference"):
-                m = RE_REFERENCE_PROPERTY.search(text)
-                assert m, f"Invalid reference property: {text}"
-                reference = m.group(1).strip()
+            elif lower_text.startswith(tag := "reference"):
+                reference = text[len(tag) :].split('!')[0].strip()
                 self.properties.references.append(reference)
                 not_handled = False
             elif lower_text.startswith("retaincase"):
@@ -427,10 +348,8 @@ class IddField:
 
         # === t ===
         elif index == 't':
-            if lower_text.startswith("type"):
-                m = RE_TYPE_PROPERTY.search(text)
-                assert m, f"Invalid type property: {text}"
-                field_type = m.group(1).strip()
+            if lower_text.startswith(tag := "type"):
+                field_type = text[len(tag) :].split('!')[0].strip()
                 self.properties.type = IddFieldType(field_type)
                 not_handled = False
 
@@ -439,11 +358,9 @@ class IddField:
             if lower_text.startswith("unitsBasedOnField"):
                 # intentionally ignored in C++
                 not_handled = False
-            elif lower_text.startswith("units"):
-                m = RE_UNITS_PROPERTY.search(text)
-                assert m, f"Invalid units property: {text}"
-                units = m.group(1).strip()
-                self.properties.units = units
+            elif lower_text.startswith(tag := "units"):
+                self.properties.units = text[len(tag) :].split('!')[0].strip()
+                # m = RE_UNITS_PROPERTY.search(text)
                 not_handled = False
 
         # === if none matched ===
@@ -451,22 +368,54 @@ class IddField:
             raise ValueError(f"Unknown field property text '{text}' detected in field '{self.name}'")
 
     @staticmethod
-    def load(name: str, text: str, objectName: str) -> "IddField":
-        field = IddField(name=name, objectName=objectName)
-        field._parse(text=text)
+    def from_field_id_only(objectName: str, field_id=str) -> "IddField":
+        field_id = field_id.strip()
+        field = IddField(objectName=objectName)
+        field.field_id = field_id
+
+        fieldTypeChar = field.field_id[0]
+
+        # Determine type
+        if fieldTypeChar.lower() == "a":
+            field.properties.type = IddFieldType.AlphaType
+        elif fieldTypeChar.lower() == "n":
+            # Default numerics to real
+            field.properties.type = IddFieldType.RealType
+        else:
+            raise IddFieldParseError(f"Unknown field type identifier found: '{fieldTypeChar}'")
         return field
 
-    def _parse(self, text: str) -> None:
+    @staticmethod
+    def load(objectName: str, field_lines: list[str]) -> "IddField":
+        field = IddField(objectName=objectName)
+        field._parse(field_lines=field_lines)
+        return field
 
-        # Match the field definition
-        match = RE_FIELD.search(text)
-        if not match:
-            raise IddFieldParseError(f"Field text does not match expected pattern: '{text}'")
+    def _parse(self, field_lines: list[str]) -> None:
+        if not field_lines:
+            raise ValueError(f"No lines provided to parse for field in object '{self.objectName}'")
 
-        fieldTypeChar, fieldTypeNumber, fieldProperties = match.groups()
+        field_lines = [x.strip() for x in field_lines]
+        n_lines = len(field_lines)
 
-        # Field ID (e.g. A1, N2, etc.)
-        self.field_id = f"{fieldTypeChar}{fieldTypeNumber}"
+        line_number = 0
+        self.is_last_field = ';' in field_lines[line_number]
+        if '\\field' not in field_lines[line_number]:
+            breakpoint()
+            raise IddFieldParseError(f"First line of field does not contain '\\field': '{field_lines[line_number]}'")
+        self.field_id = field_lines[line_number].replace(',', ';').split(';', maxsplit=1)[0]
+        self.field_id = self.field_id.strip()
+
+        field_name = field_lines[line_number].split('\\field ', maxsplit=1)[1].strip().split('!')[0].strip()
+        self.name = field_name
+        if field_name != self.name:
+            raise ValueError(
+                f"Field name '{field_name}' does not match expected '{self.name}' in object '{self.objectName}'"
+            )
+
+        line_number += 1
+
+        fieldTypeChar = self.field_id[0]
 
         # Determine type
         if fieldTypeChar.lower() == "a":
@@ -478,24 +427,24 @@ class IddField:
             raise IddFieldParseError(f"Unknown field type identifier found: '{fieldTypeChar}'")
 
         # Parse each metadata comment line (\keyword ...)
-        while True:
-            match = RE_METADATA_COMMENT.search(fieldProperties)
-            if not match:
+        while line_number < n_lines:
+            line = field_lines[line_number]
+            line_number += 1
+            if not line.startswith('\\'):
                 break
 
-            # property like "required-field", "type", "default", etc.
-            property_line = match.group(1).strip()
-            remaining = match.group(2).strip()
-
             # Delegate actual parsing
-            self._parse_property(text=property_line)
-
-            fieldProperties = remaining
+            self._parse_property(text=line[1:])
 
         # After consuming all properties, the rest should be empty or comment
-        remaining = fieldProperties.strip()
-        if not (RE_WHITESPACE_ONLY_BLOCK.match(remaining) or RE_COMMENT_ONLY_LINE.match(remaining)):
-            raise IddFieldParseError(f"Unable to parse remaining fields: '{remaining}'")
+        while line_number < n_lines:
+            line = field_lines[line_number]
+            line_number += 1
+            if not line or line.startswith('!'):
+                continue
+            raise IddFieldParseError(
+                f"Unexpected content found after field properties: '{line}', in field '{self.name}' of object '{self.objectName}'"
+            )
 
         # Validation
         if self.properties.type == IddFieldType.ChoiceType and not self.keys:

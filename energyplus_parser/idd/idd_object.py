@@ -4,27 +4,7 @@ from enum import IntEnum, StrEnum
 
 from energyplus_parser.constants import BLOCK_INDENT, format_leading
 from energyplus_parser.idd.idd_field import IddField
-from energyplus_parser.idd.idd_regex import (
-    RE_COMMENT_ONLY_LINE,
-    RE_EXTENSIBLE_PROPERTY,
-    RE_FIELD,
-    RE_FIELD_START,
-    RE_FORMAT_PROPERTY,
-    RE_HASURL_PROPERTY,
-    RE_LINE,
-    RE_MAX_FIELDS_PROPERTY,
-    RE_MEMO_PROPERTY,
-    RE_METADATA_COMMENT,
-    RE_MIN_FIELDS_PROPERTY,
-    RE_NAME,
-    RE_NUMBER_AND_PRECEDING_SPACE,
-    RE_OBJECT_AND_FIELDS,
-    RE_OBJECT_NO_FIELDS,
-    RE_OBSOLETE_PROPERTY,
-    RE_REQUIRED_OBJECT_PROPERTY,
-    RE_UNIQUE_PROPERTY,
-    RE_WHITESPACE_ONLY_BLOCK,
-)
+from energyplus_parser.idd.idd_regex import RE_FIELD_START, RE_NUMBER_AND_PRECEDING_SPACE
 
 LOG = logging.getLogger("IddObject")
 LOG.setLevel(logging.INFO)
@@ -95,8 +75,8 @@ class IddObjectProperties:
 
 
 class IddObject:
-    def __init__(self, name: str, group: str):
-        self.name = name
+    def __init__(self, group: str):
+        self.name: str = ""
         self.group = group
         self.properties: IddObjectProperties = IddObjectProperties()
         # Non extensible fields
@@ -106,203 +86,142 @@ class IddObject:
         self.extensible_fields: list[IddField] = []
 
     @staticmethod
-    def load(name: str, group: str, text: str) -> "IddObject":
-        idd_object = IddObject(name=name, group=group)
-        idd_object._parse(text=text)
+    def load(group: str, object_lines: list[str]) -> "IddObject":
+        idd_object = IddObject(group=group)
+        idd_object._parse(object_lines=object_lines)
         return idd_object
 
-    def _parse(self, text: str) -> None:
-        if m := RE_OBJECT_AND_FIELDS.search(text):
-            # find and parse the object text
-            object_text, fields_text = m.groups()
-            self._parseObject(text=object_text)
+    def _parse(self, object_lines: list[str]) -> None:
+        if not object_lines:
+            raise ValueError(f"No lines provided to parse for object in group '{self.group}'")
 
-            # find and parse the fields text
-            self._parseFields(fields_text)
+        object_lines = [x.strip() for x in object_lines]
+        n_lines = len(object_lines)
 
-        elif RE_OBJECT_NO_FIELDS.fullmatch(text):
-            # there are no fields in this object, it is all object text
-            self._parseObject(text)
+        line_number = 0
+        has_fields = ';' not in object_lines[line_number]
+        self.name = object_lines[line_number].replace(',', ';').split(';', maxsplit=1)[0]
 
-        else:
-            # error
-            raise ValueError(f"Unexpected pattern '{text}' found in object '{self.name}'")
+        line_number += 1
 
-        # remove existing extensible fields and add them to the extensible list
-        if self.properties.extensible:
-            self._makeExtensible()
-
-    def _makeExtensible(self) -> None:
-        num_extensible = self.properties.numExtensible
-
-        # check that num_extensible > 0
-        if num_extensible == 0:
-            print(f"Error: Extensible length 0 in object '{self.name}'")
+        if n_lines == 1:
             return
 
-        # find the begin extensible field, there should be only one
-        extensible_begin_idx = None
-        for idx, field in enumerate(self.fields):
-            if field.properties.beginExtensible:
-                extensible_begin_idx = idx
-                break
+        found_fields_start = False
 
-        # no extensible begin found
-        if extensible_begin_idx is None:
-            print(f"Error: No begin-extensible field detected in object '{self.name}'")
-            return
+        # Process object: line_number is 1 already
+        while line_number < n_lines:
+            line = object_lines[line_number]
+            line_number += 1
 
-        # extensible begin is too close to the end of the field list
-        if extensible_begin_idx + num_extensible > len(self.fields):
-            print(f"Error: Extensible fields begin too close to end of fields in object '{self.name}'")
-            return
-
-        # copy extensible fields
-        self.extensible_fields = self.fields[extensible_begin_idx : extensible_begin_idx + num_extensible]
-
-        # remove all the extensible fields from the field list
-        self.fields = self.fields[:extensible_begin_idx]
-
-        # replace names of extensible fields so they do not contain numbers
-        # e.g., "Vertex 1 X-coordinate" -> "Vertex X-coordinate"
-        for field in self.extensible_fields:
-            field_name = field.name
-            # Using RE_NUMBER_AND_PRECEDING_SPACE from your RE_XXX definitions
-            field_name = RE_NUMBER_AND_PRECEDING_SPACE.sub("", field_name, count=1)
-            field_name = field_name.strip()
-            field.name = field_name
-
-        # figure out numExtensibleGroupsRequired
-        if self.properties.minFields > 0:
-            min_fields = self.properties.minFields
-            if min_fields > len(self.fields):
-                numerator = min_fields - len(self.fields)
-                denominator = num_extensible
-                self.properties.numExtensibleGroupsRequired = math.ceil(numerator / denominator)
-
-    def _parseObject(self, text: str) -> None:
-        # Find object name and initial properties text
-        m = RE_LINE.search(text)
-        if m:
-            object_name = m.group(1).strip()
-            if self.name != object_name:
-                raise ValueError(f"Object name '{object_name}' does not match expected '{self.name}'")
-
-            properties_text = m.group(2).strip()
-        else:
-            raise ValueError(f"Could not determine object name from text '{text}'")
-
-        # Parse all metadata/comments
-        while True:
-            meta_match = RE_METADATA_COMMENT.search(properties_text)
-            if not meta_match:
-                break
-
-            this_property = meta_match.group(1).strip()
-            self._parseProperty(this_property)
-
-            properties_text = meta_match.group(2).strip()
-
-        # Check remaining text is only whitespace or comments
-        if not (RE_WHITESPACE_ONLY_BLOCK.fullmatch(properties_text) or RE_COMMENT_ONLY_LINE.fullmatch(properties_text)):
-            raise ValueError(f"Could not process properties text '{properties_text}' in object '{self.name}'")
-
-    def _parseProperty(self, text: str) -> None:
-        not_handled = True
-
-        m = RE_MEMO_PROPERTY.search(text)
-        if m:
-            memo = m.group(1).strip()
-            if not self.properties.memo:
-                self.properties.memo = memo
-            else:
-                self.properties.memo += "\n" + memo
-            not_handled = False
-
-        elif RE_UNIQUE_PROPERTY.fullmatch(text):
-            self.properties.unique = True
-            not_handled = False
-
-        elif RE_REQUIRED_OBJECT_PROPERTY.fullmatch(text):
-            self.properties.required = True
-            not_handled = False
-
-        elif RE_OBSOLETE_PROPERTY.fullmatch(text):
-            self.properties.obsolete = True
-            not_handled = False
-
-        elif RE_HASURL_PROPERTY.fullmatch(text):
-            self.properties.hasUrl = True
-            not_handled = False
-
-        elif m := RE_EXTENSIBLE_PROPERTY.search(text):
-            self.properties.extensible = True
-            self.properties.numExtensible = int(m.group(1))
-            not_handled = False
-
-        elif m := RE_FORMAT_PROPERTY.search(text):
-            self.properties.format = m.group(1).strip()
-            not_handled = False
-
-        elif m := RE_MIN_FIELDS_PROPERTY.search(text):
-            self.properties.minFields = int(m.group(1))
-            not_handled = False
-
-        elif m := RE_MAX_FIELDS_PROPERTY.search(text):
-            self.properties.maxFields = int(m.group(1))
-            not_handled = False
-
-        if not_handled:
-            raise ValueError(f"Unknown property text '{text}' in object '{self.name}'")
-
-    def _parseFields(self, text: str) -> None:
-        begin = 0
-        end = len(text)
-
-        match = RE_FIELD_START.search(text)
-        if match:
-            begin = match.start()
-            if begin != 0:
-                raise ValueError(
-                    f"Could not process field text '{text}' in object '{self.name}', start is not where expected"
-                )
-        else:
-            return
-
-        while begin < end:
-            # Search for the next field start after current position
-            match = RE_FIELD_START.search(text, begin + 1)
-            if match:
-                field_end = match.start()
-            else:
-                field_end = end
-
-            # Extract field text
-            field_text = text[begin:field_end]
-            begin = field_end
-
-            # Try to find field name
-            name_match = RE_NAME.search(field_text)
-            if name_match:
-                field_name = name_match.group(1).strip()
-            else:
-                type_match = RE_FIELD.search(field_text)
-                if type_match:
-                    field_type_char = type_match.group(1).strip()
-                    field_type_number = type_match.group(2).strip()
-                    field_name = field_type_char + field_type_number
+            if line.startswith('\\memo'):
+                memo_text = line[len('\\memo') :].strip()
+                if self.properties.memo:
+                    self.properties.memo += "\n" + memo_text
                 else:
-                    raise ValueError(f"Cannot determine field name from text '{field_text}'")
+                    self.properties.memo = memo_text
+            elif line.startswith('\\unique-object'):
+                self.properties.unique = True
+            elif line.startswith('\\required-object'):
+                self.properties.required = True
+            elif line.startswith('\\obsolete'):
+                self.properties.obsolete = True
+            elif line.startswith('\\url-object'):
+                self.properties.hasUrl = True
+            elif line.startswith(tag := '\\min-fields'):
+                min_fields_str = line[len(tag) :].strip()
+                self.properties.minFields = int(min_fields_str)
+            elif line.startswith(tag := '\\max-fields'):
+                max_fields_str = line[len(tag) :].strip()
+                self.properties.maxFields = int(max_fields_str)
+            elif line.startswith(tag := '\\extensible:'):
+                num_extensible_str = line[len(tag) :].strip().split(" ")[0]
+                self.properties.extensible = True
+                self.properties.numExtensible = int(num_extensible_str)
+            elif line.startswith(tag := '\\format'):
+                format_text = line[len(tag) :].strip()
+                self.properties.format = format_text
+            elif has_fields and line.startswith('A') or line.startswith('N'):
+                found_fields_start = True
+                break
+            else:
+                raise ValueError(f"Unknown property line '{line}' in object '{self.name}'")
 
-            # Load the field
-            field = IddField.load(field_name, field_text, self.name)
-            if field is None:
-                raise ValueError(f"Cannot parse IddField text '{field_text}'")
+        if has_fields and not found_fields_start:
+            raise ValueError(f"No fields found in object '{self.name}'")
 
-            self.fields.append(field)
+        found_begin_extensible = False
 
-        # Mark last field
-        self.fields[-1].is_last_field = True
+        start_index = line_number - 1
+        expanded_lines = []
+        for line in object_lines[start_index:]:
+            matches = list(RE_FIELD_START.finditer(line))
+            if len(matches) <= 1:
+                expanded_lines.append(line)
+                continue
+
+            # Extract tail (anything after the last field match)
+            last_match = matches[-1]
+            tail = line[last_match.end() :].strip()
+
+            # Split multi-field lines: keep only field ids, ignore tail like \note ...
+            for match in matches:
+                field_id = line[match.start() : match.end()].strip()  # drop trailing comma/semicolon
+                expanded_lines.append(f"{field_id} \\field {field_id[:-1]}")
+                expanded_lines.append(tail)
+
+        object_lines = object_lines[:start_index] + expanded_lines
+        n_lines = len(object_lines)
+
+        while line_number < n_lines:
+            line = object_lines[line_number]
+
+            if line.startswith('A') or line.startswith('N') or not line:
+                end_index = line_number
+                field_lines = object_lines[start_index:end_index]
+                field = IddField.load(objectName=self.name, field_lines=field_lines)
+
+                if field.properties.beginExtensible:
+                    if found_begin_extensible:
+                        raise ValueError(f"Multiple begin-extensible fields found in object '{self.name}'")
+                    if self.properties.extensible:
+                        found_begin_extensible = True
+                    else:
+                        raise ValueError(
+                            f"Begin-extensible field found in non-extensible object '{self.name}' for field '{field.name}'"
+                        )
+                if found_begin_extensible:
+                    # Remove number from field name
+                    field.name = RE_NUMBER_AND_PRECEDING_SPACE.sub("", field.name, count=1).strip()
+                    self.extensible_fields.append(field)
+                else:
+                    self.fields.append(field)
+                start_index = line_number
+
+            if found_begin_extensible and len(self.extensible_fields) == self.properties.numExtensible:
+                # Stop processing more fields and ensure we do not process the last
+                start_index = n_lines + 1
+                self.extensible_fields[-1].is_last_field = True
+                break
+
+            line_number += 1
+
+        # process last field if needed
+        if start_index < n_lines:
+            field_lines = object_lines[start_index:]
+            field = IddField.load(objectName=self.name, field_lines=field_lines)
+            if found_begin_extensible:
+                self.extensible_fields.append(field)
+            else:
+                self.fields.append(field)
+
+        # Calculate extensible groups required
+        if self.properties.extensible:
+            if self.properties.minFields > 0:
+                if self.properties.minFields > len(self.fields):
+                    numerator = self.properties.minFields - len(self.fields)
+                    denominator = self.properties.numExtensible
+                    self.properties.numExtensibleGroupsRequired = math.ceil(numerator / denominator)
 
     def __repr__(self) -> str:
         return self.name

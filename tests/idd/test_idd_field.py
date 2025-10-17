@@ -45,9 +45,7 @@ def test_parse_idd_choice_field():
        \default No
        \key Yes
        \key No"""
-    text = "".join([x.strip() for x in ori_text.splitlines()])
-
-    field = IddField.load(name=name, text=text, objectName=objectName)
+    field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.name == name
     assert field.objectName == objectName
@@ -93,10 +91,7 @@ def test_parse_idd_autosizable_field():
        \minimum> 0.5
        \maximum 1.0"""
 
-    text = "".join([x.strip() for x in ori_text.splitlines()])
-
-    field = IddField.load(name=name, text=text, objectName=objectName)
-    field.is_last_field = True
+    field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.name == name
     assert field.objectName == objectName
@@ -140,7 +135,7 @@ def test_parse_idd_extensible_field():
        \object-list SpaceNames"""
     text = "".join([x.strip() for x in ori_text.splitlines()])
 
-    field = IddField.load(name=name, text=text, objectName=objectName)
+    field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.field_id == "A2"
 
@@ -186,9 +181,8 @@ def test_parse_idd_field_with_reference():
        \reference validOASysEquipmentNames
        \reference-class-name validBranchEquipmentTypes
        \reference-class-name validOASysEquipmentTypes"""
-    text = "".join([x.strip() for x in ori_text.splitlines()])
 
-    field = IddField.load(name=name, text=text, objectName=objectName)
+    field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.field_id == "A1"
     assert field.name == name
@@ -237,16 +231,13 @@ def test_parse_idd_numeric_default():
        \minimum> 0.05
        \maximum 0.7
        \default 0.1"""
-    text = "".join([x.strip() for x in ori_text.splitlines()])
 
-    field = IddField.load(name=name, text=text, objectName=objectName)
+    field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.field_id == "N6"
     assert field.name == name
     assert field.objectName == objectName
     assert not field.keys
-    # TODO: Can't tet for it, currently it's IddObject that flags it
-    field.is_last_field = True
     assert field.is_last_field
 
     field_props = field.properties

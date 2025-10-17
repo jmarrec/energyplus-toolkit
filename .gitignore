@@ -3,6 +3,9 @@
 .AppleDouble
 .LSOverride
 
+LocalOnly/
+IDD_Parser.ipynb
+
 node_modules
 
 # Byte-compiled / optimized / DLL files

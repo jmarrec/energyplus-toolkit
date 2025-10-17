@@ -99,9 +99,7 @@ def test_parse_idd_object_required_unique() -> None:
        \minimum> 0.0
        \default 1
 """
-    text = "".join([x.strip() for x in ori_text.splitlines()])
-
-    idd_obj = IddObject.load(name=name, group=group, text=text)
+    idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
 
     assert idd_obj.name == name
     assert idd_obj.group == group
@@ -168,9 +166,8 @@ def test_parse_idd_object_with_one_extensible() -> None:
   N2 ; \field Spectrum
        \type real
 """
-    text = "".join([x.strip() for x in ori_text.splitlines()])
 
-    idd_obj = IddObject.load(name=name, group=group, text=text)
+    idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
 
     assert idd_obj.name == name
     assert idd_obj.group == group
@@ -245,9 +242,8 @@ def test_parse_idd_object_with_extra_extensible_fields() -> None:
   N15, N16,     \note fields as indicated
   N17, N18;     \note fields as indicated
 """
-    text = "".join([x.strip() for x in ori_text.splitlines()])
 
-    idd_obj = IddObject.load(name=name, group=group, text=text)
+    idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
 
     assert idd_obj.name == name
     assert idd_obj.group == group
@@ -278,10 +274,7 @@ def test_parse_idd_object_weird_ground():
   N30, N31, N32, N33, N34, N35, N36, N37, N38, N39, N40;                        \note fields as indicated
 """
 
-    text = "".join([x.strip() for x in ori_text.splitlines()])
-
-    idd_obj = IddObject.load(name=name, group=group, text=text)
-
+    idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
     assert idd_obj.name == name
     assert idd_obj.group == group
     assert len(idd_obj.fields) == 40
@@ -290,84 +283,121 @@ def test_parse_idd_object_weird_ground():
        \memo This is only needed when using manual gridding (not recommended)
        \memo XFACE: X Direction cell face coordinates: m
   N1 , \field N1
+       \note fields as indicated
        \type real
   N2 , \field N2
+       \note fields as indicated
        \type real
   N3 , \field N3
+       \note fields as indicated
        \type real
   N4 , \field N4
+       \note fields as indicated
        \type real
   N5 , \field N5
+       \note fields as indicated
        \type real
   N6 , \field N6
+       \note fields as indicated
        \type real
   N7 , \field N7
+       \note fields as indicated
        \type real
   N8 , \field N8
+       \note fields as indicated
        \type real
   N9 , \field N9
+       \note fields as indicated
        \type real
   N10, \field N10
+       \note fields as indicated
        \type real
   N11, \field N11
+       \note fields as indicated
        \type real
   N12, \field N12
+       \note fields as indicated
        \type real
   N13, \field N13
+       \note fields as indicated
        \type real
   N14, \field N14
        \note fields as indicated
        \type real
   N15, \field N15
+       \note fields as indicated
        \type real
   N16, \field N16
+       \note fields as indicated
        \type real
   N17, \field N17
+       \note fields as indicated
        \type real
   N18, \field N18
+       \note fields as indicated
        \type real
   N19, \field N19
+       \note fields as indicated
        \type real
   N20, \field N20
+       \note fields as indicated
        \type real
   N21, \field N21
+       \note fields as indicated
        \type real
   N22, \field N22
+       \note fields as indicated
        \type real
   N23, \field N23
+       \note fields as indicated
        \type real
   N24, \field N24
+       \note fields as indicated
        \type real
   N25, \field N25
+       \note fields as indicated
        \type real
   N26, \field N26
+       \note fields as indicated
        \type real
   N27, \field N27
+       \note fields as indicated
        \type real
   N28, \field N28
+       \note fields as indicated
        \type real
   N29, \field N29
        \note fields as indicated
        \type real
   N30, \field N30
+       \note fields as indicated
        \type real
   N31, \field N31
+       \note fields as indicated
        \type real
   N32, \field N32
+       \note fields as indicated
        \type real
   N33, \field N33
+       \note fields as indicated
        \type real
   N34, \field N34
+       \note fields as indicated
        \type real
   N35, \field N35
+       \note fields as indicated
        \type real
   N36, \field N36
+       \note fields as indicated
        \type real
   N37, \field N37
+       \note fields as indicated
        \type real
   N38, \field N38
+       \note fields as indicated
        \type real
   N39, \field N39
+       \note fields as indicated
        \type real
   N40; \field N40
        \note fields as indicated

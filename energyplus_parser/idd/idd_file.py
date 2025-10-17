@@ -3,17 +3,7 @@ from pathlib import Path
 
 from energyplus_parser.constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
 from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idd.idd_regex import (
-    RE_BUILD,
-    RE_CLOSING_FIELD,
-    RE_COMMENT_ONLY_LINE,
-    RE_GROUP,
-    RE_LINE,
-    RE_METADATA_COMMENT,
-    RE_OBJECT_NO_FIELDS,
-    RE_VERSION,
-    RE_VERSION_OBJECT_NAME,
-)
+from energyplus_parser.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
 
 
 class IddFile:
@@ -50,11 +40,10 @@ class IddFile:
 
         # Fake a comment-only object
         comment_only_object = IddObject.load(
-            COMMENT_ONLY_OBJECT_NAME,
-            current_group,
-            COMMENT_ONLY_OBJECT_TEXT,
+            group=current_group,
+            object_lines=[COMMENT_ONLY_OBJECT_TEXT],
         )
-        assert comment_only_object
+        assert comment_only_object.name == COMMENT_ONLY_OBJECT_NAME
         self.objects.append(comment_only_object)
 
         # Parse the first line as version
@@ -78,16 +67,17 @@ class IddFile:
                 # print(f"Header closed on {line_number}")
                 header_closed = True
                 continue
-            elif m := RE_BUILD.search(line):
-                self.build = m.group(1)
-                header_lines.append(line)
-            elif RE_COMMENT_ONLY_LINE.fullmatch(line):
+            elif line.startswith('!'):  # RE_COMMENT_ONLY_LINE.fullmatch(line):
                 if not header_closed:
                     header_lines.append(line)
+                # m := RE_BUILD.search(line):
+                if 'IDD_BUILD' in line:
+                    self.build = line.split('IDD_BUILD ')[1].strip()
                 continue
-            elif m := RE_GROUP.search(line):
+            elif line.startswith(r'\group '):  # m := RE_GROUP.search(line):
                 header_closed = True
-                current_group = m.group(1).strip()
+                # current_group = m.group(1).strip()
+                current_group = line[len(r'\group ') :].strip()
                 # print(f"{current_group=}")
                 continue
             else:
@@ -96,33 +86,41 @@ class IddFile:
                 object_num += 1
 
                 # Peek at object name
-                m = RE_LINE.search(line)
-                if not m:
-                    raise ValueError(f"Cannot determine object name: '{line}'")
-                object_name = m.group(1).strip()
+                # m = RE_LINE.search(line)
+                # if not m:
+                #     raise ValueError(f"Cannot determine object name: '{line}'")
+                # object_name = m.group(1).strip()
+                if ';' in line:
+                    object_name = line.split(';')[0].strip()
+                    found_closing_line = True
+                elif ',' in line:
+                    object_name = line.split(',')[0].strip()
+                    found_closing_line = False
                 # print(f"{object_num=}, {object_name=}")
 
                 # Collect full text of the object
                 text_lines = [line]
-                found_closing_line = bool(RE_OBJECT_NO_FIELDS.match(line)) or bool(RE_CLOSING_FIELD.match(line))
+                # found_closing_line = bool(RE_OBJECT_NO_FIELDS.match(line)) or bool(RE_CLOSING_FIELD.match(line))
 
                 while line_number < total_lines:
                     next_line = lines[line_number].strip()
                     line_number += 1
                     # print(line_number)
-                    if found_closing_line and not RE_METADATA_COMMENT.match(next_line):
+                    if found_closing_line and not next_line.startswith('\\'):  #  RE_METADATA_COMMENT.match(next_line):
                         break
                     if next_line:
                         text_lines.append(next_line)
                         if RE_CLOSING_FIELD.fullmatch(next_line):
                             found_closing_line = True
 
-                object_text = "".join(text_lines)
-                obj = IddObject.load(name=object_name, group=current_group, text=object_text)
-                if obj:
-                    self.objects.append(obj)
-                else:
-                    raise ValueError(f"Unable to construct IddObject from text:\n{object_text}")
+                # try:
+                obj = IddObject.load(group=current_group, object_lines=text_lines)
+                assert obj.name == object_name
+                self.objects.append(obj)
+            # except Exception as e:
+            #     raise ValueError(
+            #         f"Unable to construct IddObject {object_name} from text:\n{'\n'.join(text_lines)}: {e}"
+            #     )
 
         self.header = "\n".join(header_lines)
 
