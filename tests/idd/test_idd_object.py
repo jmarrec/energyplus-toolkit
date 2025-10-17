@@ -201,3 +201,67 @@ def test_parse_idd_object_with_one_extensible() -> None:
     assert obj_props.maxFields is None
 
     assert str(idd_obj) == ori_text
+
+
+def test_parse_idd_object_with_extra_extensible_fields() -> None:
+    """A test for an IDD Object that has a bunch of extra fields just to please IDF Editor."""
+    name = "Site:SpectrumData"
+    group = "Simulation Parameters"
+    ori_text = r"""Site:SpectrumData,
+       \min-fields 8
+       \memo Spectrum Data Type is followed by up to 107 sets of normal-incidence measured values of
+       \memo [wavelength, spectrum] for wavelengths covering the solar (0.25 to 2.5 microns) or visible
+       \memo spectrum (0.38 to 0.78 microns)
+       \extensible:2
+  A1 , \field Name
+       \required-field
+       \type alpha
+       \reference SpectrumDataNames
+  A2 , \field Spectrum Data Type
+       \required-field
+       \type choice
+       \key Solar
+       \key Visible
+  N1 , \field Wavelength 1
+       \type real
+       \units micron
+  N2 , \field Spectrum 1
+       \type real
+  N3 , \field Wavelength 2
+       \type real
+       \units micron
+  N4 , \field Spectrum 2
+       \type real
+  N5 , \field Wavelength 3
+       \begin-extensible
+       \type real
+       \units micron
+  N6 , \field Spectrum 3
+       \type real
+  N7 , N8,       \note fields as indicated
+  N9 , N10,      \note fields as indicated
+  N11, N12,     \note fields as indicated
+  N13, N14,     \note fields as indicated
+  N15, N16,     \note fields as indicated
+  N17, N18;     \note fields as indicated
+"""
+    text = "".join([x.strip() for x in ori_text.splitlines()])
+
+    idd_obj = IddObject.load(name=name, group=group, text=text)
+
+    assert idd_obj.name == name
+    assert idd_obj.group == group
+    assert len(idd_obj.fields) == 6
+    assert idd_obj.fields[0].name == "Name"
+    assert idd_obj.fields[1].name == "Spectrum Data Type"
+    assert [x.name for x in idd_obj.fields] == [
+        "Name",
+        "Spectrum Data Type",
+        "Wavelength 1",
+        "Spectrum 1",
+        "Wavelength 2",
+        "Spectrum 2",
+    ]
+    assert len(idd_obj.extensible_fields) == 2
+    assert idd_obj.extensible_fields[0].name == "Wavelength"
+    assert idd_obj.extensible_fields[1].name == "Spectrum"
