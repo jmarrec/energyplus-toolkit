@@ -28,4 +28,3 @@ line_length = 120
 skip_gitignore = true
 # you can skip files as below
 #skip_glob = docs/conf.py
-
