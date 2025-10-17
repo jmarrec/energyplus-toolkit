@@ -52,6 +52,7 @@ def test_parse_idd_choice_field():
     assert field.name == name
     assert field.objectName == objectName
     assert field.keys == [IddKey(name="Yes"), IddKey(name="No")]
+    assert not field.is_last_field
 
     field_props = field.properties
     assert field_props.type == IddFieldType.ChoiceType
@@ -100,6 +101,7 @@ def test_parse_idd_autosizable_field():
     assert field.name == name
     assert field.objectName == objectName
     assert not field.keys
+    assert field.is_last_field
 
     field_props = field.properties
     assert field_props.type == IddFieldType.RealType
@@ -140,9 +142,12 @@ def test_parse_idd_extensible_field():
 
     field = IddField.load(name=name, text=text, objectName=objectName)
 
+    assert field.field_id == "A2"
+
     assert field.name == name
     assert field.objectName == objectName
     assert not field.keys
+    assert not field.is_last_field
 
     field_props = field.properties
     assert field_props.type == IddFieldType.ObjectListType
@@ -185,9 +190,11 @@ def test_parse_idd_field_with_reference():
 
     field = IddField.load(name=name, text=text, objectName=objectName)
 
+    assert field.field_id == "A1"
     assert field.name == name
     assert field.objectName == objectName
     assert not field.keys
+    assert not field.is_last_field
 
     field_props = field.properties
     assert field_props.type == IddFieldType.AlphaType
@@ -223,7 +230,7 @@ def test_parse_idd_field_with_reference():
 def test_parse_idd_numeric_default():
     objectName = "Material:RoofVegetation"
     name = "Thickness"
-    ori_text = r"""  N6 , \field Thickness
+    ori_text = r"""  N6 ; \field Thickness
        \type real
        \units m
        \ip-units in
@@ -234,9 +241,13 @@ def test_parse_idd_numeric_default():
 
     field = IddField.load(name=name, text=text, objectName=objectName)
 
+    assert field.field_id == "N6"
     assert field.name == name
     assert field.objectName == objectName
     assert not field.keys
+    # TODO: Can't tet for it, currently it's IddObject that flags it
+    field.is_last_field = True
+    assert field.is_last_field
 
     field_props = field.properties
     assert field_props.type == IddFieldType.RealType

@@ -265,3 +265,113 @@ def test_parse_idd_object_with_extra_extensible_fields() -> None:
     assert len(idd_obj.extensible_fields) == 2
     assert idd_obj.extensible_fields[0].name == "Wavelength"
     assert idd_obj.extensible_fields[1].name == "Spectrum"
+
+
+def test_parse_idd_object_weird_ground():
+    name = "GroundHeatTransfer:Slab:XFACE"
+    group = "Detailed Ground Heat Transfer"
+    ori_text = r"""GroundHeatTransfer:Slab:XFACE,
+       \memo This is only needed when using manual gridding (not recommended)
+       \memo XFACE: X Direction cell face coordinates: m
+  N1, N2, N3, N4, N5, N6, N7, N8, N9, N10, N11, N12, N13, N14,                  \note fields as indicated
+  N15, N16, N17, N18, N19, N20, N21, N22, N23, N24, N25, N26, N27, N28, N29,    \note fields as indicated
+  N30, N31, N32, N33, N34, N35, N36, N37, N38, N39, N40;                        \note fields as indicated
+"""
+
+    text = "".join([x.strip() for x in ori_text.splitlines()])
+
+    idd_obj = IddObject.load(name=name, group=group, text=text)
+
+    assert idd_obj.name == name
+    assert idd_obj.group == group
+    assert len(idd_obj.fields) == 40
+
+    expected_str = r"""GroundHeatTransfer:Slab:XFACE,
+       \memo This is only needed when using manual gridding (not recommended)
+       \memo XFACE: X Direction cell face coordinates: m
+  N1 , \field N1
+       \type real
+  N2 , \field N2
+       \type real
+  N3 , \field N3
+       \type real
+  N4 , \field N4
+       \type real
+  N5 , \field N5
+       \type real
+  N6 , \field N6
+       \type real
+  N7 , \field N7
+       \type real
+  N8 , \field N8
+       \type real
+  N9 , \field N9
+       \type real
+  N10, \field N10
+       \type real
+  N11, \field N11
+       \type real
+  N12, \field N12
+       \type real
+  N13, \field N13
+       \type real
+  N14, \field N14
+       \note fields as indicated
+       \type real
+  N15, \field N15
+       \type real
+  N16, \field N16
+       \type real
+  N17, \field N17
+       \type real
+  N18, \field N18
+       \type real
+  N19, \field N19
+       \type real
+  N20, \field N20
+       \type real
+  N21, \field N21
+       \type real
+  N22, \field N22
+       \type real
+  N23, \field N23
+       \type real
+  N24, \field N24
+       \type real
+  N25, \field N25
+       \type real
+  N26, \field N26
+       \type real
+  N27, \field N27
+       \type real
+  N28, \field N28
+       \type real
+  N29, \field N29
+       \note fields as indicated
+       \type real
+  N30, \field N30
+       \type real
+  N31, \field N31
+       \type real
+  N32, \field N32
+       \type real
+  N33, \field N33
+       \type real
+  N34, \field N34
+       \type real
+  N35, \field N35
+       \type real
+  N36, \field N36
+       \type real
+  N37, \field N37
+       \type real
+  N38, \field N38
+       \type real
+  N39, \field N39
+       \type real
+  N40; \field N40
+       \note fields as indicated
+       \type real
+"""
+
+    assert str(idd_obj) == expected_str
