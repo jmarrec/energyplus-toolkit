@@ -1,7 +1,7 @@
 import logging
 from enum import IntEnum, StrEnum
 
-from energyplus_parser.constants import BLOCK_INDENT, format_leading
+from energyplus_parser.constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)
@@ -248,7 +248,7 @@ class IddField:
 
                 if self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
                     if any(x in lower_text for x in ['autosize', 'autocalculate']):
-                        self.properties.numericDefault = -9999.0
+                        self.properties.numericDefault = AUTOSIZE_VALUE
                     else:
                         self.properties.numericDefault = float(string_default)
 
