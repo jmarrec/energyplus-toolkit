@@ -21,6 +21,7 @@ class IdfField(ABC):
         self._default_value: str | float | int | None = None
         self.idd_field: IddField = idd_field
         self._default_value = idd_field.properties.stringDefault
+        self.is_last_field = idd_field.is_last_field
 
     @property
     def required(self):
@@ -230,6 +231,10 @@ class IntegerField(NumericField):
     def __init__(self, idd_field: IddField) -> None:
         super().__init__(idd_field=idd_field)
         self._value: int | None = None
+        if self.minimum_value is not None:
+            self.minimum_value = int(self.minimum_value)
+        if self.maximum_value is not None:
+            self.maximum_value = int(self.maximum_value)
 
     def setInt(self, value: int) -> None:
         if not isinstance(value, (float, int)):
@@ -271,15 +276,16 @@ class RealField(NumericField):
 class ChoiceField(IdfField):
     def __init__(self, idd_field: IddField) -> None:
         super().__init__(idd_field=idd_field)
-        self._default_value: str | None = idd_field.properties.stringDefault
 
-        self.valid_choices = [k.name for k in idd_field.keys]
-        self.lower_valid_choices = {k.lower() for k in self.valid_choices}
-        self.is_boolean = self.lower_valid_choices == {'no', 'yes'}
+        self.valid_choices: set[str] = {k.name for k in idd_field.keys}
+        self._canonical_map: dict[str, str] = {k.lower(): k for k in self.valid_choices}
+        self.is_boolean: bool = self._canonical_map.keys() == {'no', 'yes'}
+
+        self._default_value: str | None = idd_field.properties.stringDefault
 
     def setString(self, value: str):
         v = value.strip()
-        self.validate_choice(value=v)
+        v = self._canonical_validate_choice(value=v)
         self._value = v
 
     def setBool(self, value: bool):
@@ -290,8 +296,10 @@ class ChoiceField(IdfField):
     def validate(self):
         super().validate()
         if self._value is not None:
-            self.validate_choice(value=self._value)
+            self._canonical_validate_choice(value=self._value)
 
-    def validate_choice(self, value: str):
-        if value.lower() not in self.lower_valid_choices:
+    def _canonical_validate_choice(self, value: str):
+        v = self._canonical_map.get(value.lower(), None)
+        if v is None:
             raise FieldValidationError(f"Invalid choice: {value}. Valid choices are: {self.valid_choices}")
+        return v
