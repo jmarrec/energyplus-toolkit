@@ -387,3 +387,52 @@ Zone,
         ]
     )
     assert str(idf) == expected
+
+
+# ---------------------------------------------------------------------------
+# Integration: real IDF serialisation with IDF_LEADING=2
+# ---------------------------------------------------------------------------
+
+
+def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
+    """Load the 1ZoneUncontrolled IDF, serialise with IDF_LEADING=2, and verify
+    structural and spot-check properties of the output."""
+    from energyplus_parser.idf import idf_constants
+
+    idf_path = RESOURCES / "1ZoneUncontrolled-V26-1-0.idf"
+    idf = IdfFile.load(idf_path, ep_idd)
+
+    original_leading = idf_constants.IDF_LEADING
+    try:
+        idf_constants.IDF_LEADING = 2
+        result = str(idf)
+    finally:
+        idf_constants.IDF_LEADING = original_leading
+
+    lines = result.splitlines()
+
+    # Header is preserved unchanged
+    assert lines[0] == "!-Generator IDFEditor 1.34"
+
+    # Every object line (not comment, not blank) starts with exactly 2 spaces
+    object_type_lines = [
+        line for line in lines if line and not line.startswith("!") and not line.startswith("  ")  # exclude field lines
+    ]
+    assert object_type_lines == [], "All non-comment non-blank lines must be indented by 2"
+
+    # Field lines start with 4 spaces (IDF_LEADING=2 + IDF_INDENT=2)
+    field_lines = [line for line in lines if line.startswith("    ") and ("!-" in line)]
+    assert len(field_lines) > 0, "Expected field lines with 4-space indent"
+    for line in field_lines:
+        assert line.startswith("    "), f"Field line not indented by 4: {line!r}"
+
+    # Spot-check: Version object
+    version_block_start = next(i for i, l in enumerate(lines) if l == "  Version,")
+    assert lines[version_block_start + 1] == "    26.1;                    !- Version Identifier"
+
+    # Spot-check: Building object name field
+    building_start = next(i for i, l in enumerate(lines) if l == "  Building,")
+    assert lines[building_start + 1] == "    Simple One Zone (Wireframe DXF),  !- Name"
+
+    # All 88 objects are present
+    assert idf.num_objects() == 88
