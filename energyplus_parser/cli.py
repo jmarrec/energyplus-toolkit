@@ -56,7 +56,10 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="Allow overwriting an existing output file.",
+        help=(
+            "Overwrite the input IDF file in-place (when no --output is given), "
+            "or allow overwriting an existing --output file."
+        ),
     )
     return parser
 
@@ -88,7 +91,7 @@ def main(args_: list[str] | None = None) -> None:
         sys.stdout.write(str(idf))
     else:
         if output_path is None:
-            output_path = idf_path.with_suffix("").with_name(idf_path.stem + ".out.idf")
+            output_path = idf_path if args.overwrite else idf_path.with_name(idf_path.stem + ".out.idf")
         idf.save(output_path, overwrite=args.overwrite)
         print(f"Written to: {output_path}")
 

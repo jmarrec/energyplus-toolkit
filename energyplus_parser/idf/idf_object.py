@@ -319,10 +319,21 @@ class IdfObject:
         )
         all_fields: list[IdfField] = active_fixed + [f for g in self._extensible_groups for f in g]
 
-        if not all_fields:
-            lines.append(f"{' ' * idf_constants.IDF_LEADING}{self.idd_object.name};")
+        indent = " " * idf_constants.IDF_LEADING
+
+        if self.idd_object.properties.format.lower() == "singleline":
+            if not all_fields:
+                lines.append(f"{indent}{self.idd_object.name};")
+            else:
+                vals = [str(f.value(return_default=False) or "") for f in all_fields]
+                # Trim trailing empty fields
+                while len(vals) > 1 and not vals[-1]:
+                    vals.pop()
+                lines.append(f"{indent}{self.idd_object.name},{','.join(vals)};")
+        elif not all_fields:
+            lines.append(f"{indent}{self.idd_object.name};")
         else:
-            lines.append(f"{' ' * idf_constants.IDF_LEADING}{self.idd_object.name},")
+            lines.append(f"{indent}{self.idd_object.name},")
             for i, field in enumerate(all_fields):
                 is_last = i == len(all_fields) - 1
                 lines.append(field.text(is_last_field=is_last))
