@@ -198,7 +198,8 @@ class IdfObject:
         field_index = ext_index % n_ext
         if group_index >= len(self._extensible_groups):
             raise IndexError(
-                f"Index {index} out of range — only {len(self._extensible_groups)} extensible group(s) present in object '{self.idd_object.name}'"
+                f"Index {index} out of range — only {len(self._extensible_groups)} "
+                f"extensible group(s) present in object '{self.idd_object.name}'"
             )
         return self._extensible_groups[group_index][field_index]
 

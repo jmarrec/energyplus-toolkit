@@ -427,10 +427,10 @@ def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
         assert line.startswith("    "), f"Field line not indented by 4: {line!r}"
 
     # Spot-check: Version object — singleLine format, all on one line
-    assert any(l == "  Version,26.1;" for l in lines), "Version must be on a single line"
+    assert any(ln == "  Version,26.1;" for ln in lines), "Version must be on a single line"
 
     # Spot-check: Building object name field
-    building_start = next(i for i, l in enumerate(lines) if l == "  Building,")
+    building_start = next(i for i, ln in enumerate(lines) if ln == "  Building,")
     assert lines[building_start + 1] == "    Simple One Zone (Wireframe DXF),  !- Name"
 
     # All 88 objects are present

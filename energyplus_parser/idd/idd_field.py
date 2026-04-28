@@ -63,7 +63,7 @@ class IddFieldProperties:
         # The EnergyPlus-format unit string for this field.
         # All data are assumed to be associated with these (typically SI) units
         self.units: str | None = None
-        # The EnergyPlus-format unit string indicating this field's IP units. No effect on underlying data; a suggestion for user-facing displays
+        # IP units — for user-facing displays only, no effect on underlying data
         self.ipUnits: str | None = None
 
         # Minimum bound is non-existent (Unbounded), >= (InclusiveBound), or > (ExclusiveBound).
@@ -443,7 +443,8 @@ class IddField:
             if not line or line.startswith('!'):
                 continue
             raise IddFieldParseError(
-                f"Unexpected content found after field properties: '{line}', in field '{self.name}' of object '{self.objectName}'"
+                f"Unexpected content found after field properties: '{line}', "
+                f"in field '{self.name}' of object '{self.objectName}'"
             )
 
         # Validation
@@ -478,7 +479,10 @@ class IddField:
         return self.name.lower() == "name" and p.type in (IddFieldType.AlphaType, IddFieldType.NodeType)
 
     def __repr__(self):
-        return f"{format_leading(field_id=self.field_id, is_last_field=self.is_last_field)}\\field {self.name}\n{self.properties}"
+        return (
+            f"{format_leading(field_id=self.field_id, is_last_field=self.is_last_field)}"
+            f"\\field {self.name}\n{self.properties}"
+        )
 
     def __str__(self):
         parts = [self.__repr__()]

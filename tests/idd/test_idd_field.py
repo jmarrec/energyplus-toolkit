@@ -101,8 +101,8 @@ def test_parse_idd_autosizable_field():
     field_props = field.properties
     assert field_props.type == IddFieldType.RealType
     assert (
-        field_props.note
-        == 'Rated sensible heat ratio (gross sensible capacity/gross total capacity)\nSensible and total capacities do not include effect of supply fan heat'
+        field_props.note == 'Rated sensible heat ratio (gross sensible capacity/gross total capacity)\n'
+        'Sensible and total capacities do not include effect of supply fan heat'
     )
     assert not field_props.required
     assert field_props.autosizable
@@ -133,8 +133,6 @@ def test_parse_idd_extensible_field():
        \type object-list
        \begin-extensible
        \object-list SpaceNames"""
-    text = "".join([x.strip() for x in ori_text.splitlines()])
-
     field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.field_id == "A2"

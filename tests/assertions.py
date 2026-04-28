@@ -1,5 +1,3 @@
-import pytest
-
 from energyplus_parser.idf.idf_field import IdfField
 
 

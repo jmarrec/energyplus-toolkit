@@ -106,7 +106,7 @@ class IddFile:
                     next_line = lines[line_number].strip()
                     line_number += 1
                     # print(line_number)
-                    if found_closing_line and not next_line.startswith('\\'):  #  RE_METADATA_COMMENT.match(next_line):
+                    if found_closing_line and not next_line.startswith('\\'):  # RE_METADATA_COMMENT.match(next_line):
                         break
                     if next_line:
                         text_lines.append(next_line)

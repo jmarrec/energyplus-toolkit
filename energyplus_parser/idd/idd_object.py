@@ -1,8 +1,7 @@
 import logging
 import math
-from enum import IntEnum, StrEnum
 
-from energyplus_parser.idd.idd_constants import BLOCK_INDENT, format_leading
+from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import IddField
 from energyplus_parser.idd.idd_regex import RE_FIELD_START, RE_NUMBER_AND_PRECEDING_SPACE
 
@@ -192,7 +191,8 @@ class IddObject:
                         found_begin_extensible = True
                     else:
                         raise ValueError(
-                            f"Begin-extensible field found in non-extensible object '{self.name}' for field '{field.name}'"
+                            f"Begin-extensible field found in non-extensible object "
+                            f"'{self.name}' for field '{field.name}'"
                         )
                 if found_begin_extensible:
                     # Remove number from field name

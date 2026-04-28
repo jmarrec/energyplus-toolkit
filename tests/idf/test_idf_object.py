@@ -1,14 +1,7 @@
 import pytest
 
 from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idf.idf_field import (
-    AlphaField,
-    ChoiceField,
-    FieldValidationError,
-    IntegerField,
-    NumericMode,
-    RealField,
-)
+from energyplus_parser.idf.idf_field import FieldValidationError, NumericMode
 from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
 
 # ---------------------------------------------------------------------------
@@ -184,8 +177,6 @@ def test_idf_object_set_name_no_name_field_raises():
 
 def test_idf_object_get_value_types():
     """get_value returns the native Python type for each field class."""
-    from energyplus_parser.idf.idf_field import NumericMode
-
     idd_obj = make_idd_object(ZONE_IDD)
     obj = IdfObject(idd_object=idd_obj)
     obj.setString(0, "MyZone")  # AlphaField  → str
@@ -219,8 +210,6 @@ SimulationControl,
 
 def test_idf_object_get_value_autosize():
     """get_value returns NumericMode.AUTOSIZE for an autosized field."""
-    from energyplus_parser.idf.idf_field import NumericMode
-
     autosize_idd = """\
 Coil:Heating:Fuel,
   A1, \\field Name
@@ -632,17 +621,17 @@ SimulationControl,
     obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
     L = " " * leading
-    I = " " * (leading + idf_constants.IDF_INDENT)
+    indent = " " * (leading + idf_constants.IDF_INDENT)
     expected = "\n".join(
         [
             f"{L}SimulationControl,",
-            f"{I}No,                      !- Do Zone Sizing Calculation",
-            f"{I}No,                      !- Do System Sizing Calculation",
-            f"{I}No,                      !- Do Plant Sizing Calculation",
-            f"{I}Yes,                     !- Run Simulation for Sizing Periods",
-            f"{I}Yes,                     !- Run Simulation for Weather File Run Periods",
-            f"{I}No,                      !- Do HVAC Sizing Simulation for Sizing Periods",
-            f"{I}1;                       !- Maximum Number of HVAC Sizing Simulation Passes",
+            f"{indent}No,                      !- Do Zone Sizing Calculation",
+            f"{indent}No,                      !- Do System Sizing Calculation",
+            f"{indent}No,                      !- Do Plant Sizing Calculation",
+            f"{indent}Yes,                     !- Run Simulation for Sizing Periods",
+            f"{indent}Yes,                     !- Run Simulation for Weather File Run Periods",
+            f"{indent}No,                      !- Do HVAC Sizing Simulation for Sizing Periods",
+            f"{indent}1;                       !- Maximum Number of HVAC Sizing Simulation Passes",
             "",
         ]
     )
@@ -698,7 +687,7 @@ SimulationControl,
 """
     obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
-    lines = [l for l in str(obj).splitlines() if l]
+    lines = [ln for ln in str(obj).splitlines() if ln]
     assert len(lines) == 6  # object-type + 5 field lines
     assert lines[-1].endswith("Run Simulation for Weather File Run Periods")
 
@@ -827,11 +816,7 @@ DesignDayLike,
     lines = serialized.splitlines()
 
     choice_line = lines[2]  # "  ,  !- Dry-Bulb..."
-    real_line = lines[3]    # "  ;  !- Sky Clearness"
+    real_line = lines[3]  # "  ;  !- Sky Clearness"
 
-    assert choice_line.strip().startswith(","), (
-        f"Expected blank choice field, got: {choice_line!r}"
-    )
-    assert real_line.strip().startswith(";"), (
-        f"Expected blank real field, got: {real_line!r}"
-    )
+    assert choice_line.strip().startswith(","), f"Expected blank choice field, got: {choice_line!r}"
+    assert real_line.strip().startswith(";"), f"Expected blank real field, got: {real_line!r}"

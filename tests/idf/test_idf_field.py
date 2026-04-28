@@ -1,16 +1,7 @@
 import pytest
 
-from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType, IddKey
-from energyplus_parser.idf.idf_field import (
-    AlphaField,
-    ChoiceField,
-    FieldValidationError,
-    IdfField,
-    IntegerField,
-    NumericField,
-    NumericMode,
-    RealField,
-)
+from energyplus_parser.idd.idd_field import BoundTypes, IddField
+from energyplus_parser.idf.idf_field import ChoiceField, FieldValidationError, IntegerField, NumericMode, RealField
 from tests.assertions import assert_has_method, refute_has_method
 
 

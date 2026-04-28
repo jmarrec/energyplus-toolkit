@@ -1,5 +1,4 @@
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_field import IddField
 from energyplus_parser.idd.idd_object import IddObject, IddObjectProperties
 
 
@@ -124,8 +123,10 @@ def test_parse_idd_object_required_unique() -> None:
     obj_props = idd_obj.properties
 
     assert (
-        obj_props.memo
-        == 'Describes parameters that are used during the simulation\nof the building. There are necessary correlations between the entries for\nthis object and some entries in the Site:WeatherStation and\nSite:HeightVariation objects, specifically the Terrain field.'
+        obj_props.memo == 'Describes parameters that are used during the simulation\n'
+        'of the building. There are necessary correlations between the entries for\n'
+        'this object and some entries in the Site:WeatherStation and\n'
+        'Site:HeightVariation objects, specifically the Terrain field.'
     )
     assert obj_props.unique
     assert obj_props.required
@@ -181,8 +182,9 @@ def test_parse_idd_object_with_one_extensible() -> None:
     obj_props = idd_obj.properties
 
     assert (
-        obj_props.memo
-        == "Spectrum Data Type is followed by up to 107 sets of normal-incidence measured values of\n[wavelength, spectrum] for wavelengths covering the solar (0.25 to 2.5 microns) or visible\nspectrum (0.38 to 0.78 microns)"
+        obj_props.memo == "Spectrum Data Type is followed by up to 107 sets of normal-incidence measured values of\n"
+        "[wavelength, spectrum] for wavelengths covering the solar (0.25 to 2.5 microns) or visible\n"
+        "spectrum (0.38 to 0.78 microns)"
     )
     assert not obj_props.unique
     assert not obj_props.required
@@ -408,7 +410,6 @@ def test_parse_idd_object_weird_ground():
 
 
 def test_parse_idd_preserve_useless_fields_to_please_idfeditor():
-    name = "AirLoopHVAC:ZoneSplitter"
     group = "Air Distribution"
     ori_text = r"""AirLoopHVAC:ZoneSplitter,
        \memo Split one air stream into N outlet streams (currently 500 per air loop, but extensible). Node names
