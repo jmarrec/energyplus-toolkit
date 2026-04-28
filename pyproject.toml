@@ -1,3 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "energyplus-parser"
+version = "0.0.1"
+requires-python = ">=3.10"
+
+[project.scripts]
+energyplus-parser = "energyplus_parser.cli:main"
+
 [tool.black]
 line-length = 120
 skip-string-normalization = true
