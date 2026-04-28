@@ -775,3 +775,63 @@ def test_idf_object_repr():
     assert "IdfObject" in r
     assert "Zone" in r
     assert "TestZone" in r
+
+
+# ---------------------------------------------------------------------------
+# Blank-field round-trip: fields left blank in IDF must stay blank on output
+# (they must NOT be replaced by their IDD defaults)
+# ---------------------------------------------------------------------------
+
+DESIGN_DAY_LIKE_IDD = """\
+DesignDayLike,
+       \\min-fields 3
+  A1 , \\field Name
+       \\type alpha
+       \\required-field
+  A2 , \\field Dry-Bulb Temperature Range Modifier Type
+       \\type choice
+       \\default DefaultMultipliers
+       \\key DefaultMultipliers
+       \\key MultiplierSchedule
+       \\key DifferenceSchedule
+  N1 ; \\field Sky Clearness
+       \\type real
+       \\minimum 0.0
+       \\maximum 1.2
+       \\default 0.0
+"""
+
+
+def test_idf_object_blank_fields_not_filled_with_defaults():
+    """Blank tokens parsed from an IDF must serialise as blank, not as the IDD default.
+
+    This is the 'Dry-Bulb Temperature Range Modifier Type' case: the field was
+    blank in the original IDF but the IDD default is 'DefaultMultipliers'.
+    After a load → str round-trip the blank must remain blank.
+    """
+    idd_obj = make_idd_object(DESIGN_DAY_LIKE_IDD)
+    idf_text = """\
+DesignDayLike,
+  My Design Day,           !- Name
+  ,                        !- Dry-Bulb Temperature Range Modifier Type
+  ;                        !- Sky Clearness
+"""
+    obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
+
+    # The choice field was blank — must not be defaulted
+    assert obj.getString(1, return_default=False) is None
+    # The real field was blank — must not be defaulted
+    assert obj.getString(2, return_default=False) is None
+
+    serialized = str(obj)
+    lines = serialized.splitlines()
+
+    choice_line = lines[2]  # "  ,  !- Dry-Bulb..."
+    real_line = lines[3]    # "  ;  !- Sky Clearness"
+
+    assert choice_line.strip().startswith(","), (
+        f"Expected blank choice field, got: {choice_line!r}"
+    )
+    assert real_line.strip().startswith(";"), (
+        f"Expected blank real field, got: {real_line!r}"
+    )
