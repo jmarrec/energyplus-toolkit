@@ -154,6 +154,30 @@ def test_idf_object_name_from_first_field():
     assert obj.name == "ZONE ONE"
 
 
+def test_idf_object_name_field_index():
+    assert make_idd_object(ZONE_IDD).name_field_index() == 0
+    assert make_idd_object(SIMULATION_CONTROL_IDD).name_field_index() is None
+
+
+def test_idf_object_name_and_name_string():
+    idd_obj = make_idd_object(ZONE_IDD)
+    obj = IdfObject(idd_object=idd_obj)
+
+    assert obj.name is None
+    assert obj.nameString() == ""
+
+    obj.setName("My Zone")
+    assert obj.name == "My Zone"
+    assert obj.nameString() == "My Zone"
+
+
+def test_idf_object_set_name_no_name_field_raises():
+    idd_obj = make_idd_object(SIMULATION_CONTROL_IDD)
+    obj = IdfObject(idd_object=idd_obj)
+    with pytest.raises(IdfObjectError):
+        obj.setName("ShouldFail")
+
+
 # ---------------------------------------------------------------------------
 # setString / getString by index
 # ---------------------------------------------------------------------------

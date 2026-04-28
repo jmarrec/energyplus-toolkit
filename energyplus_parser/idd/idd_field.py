@@ -463,6 +463,23 @@ class IddField:
             )
             self.properties.required = False
 
+    def is_name_field(self) -> bool:
+        """Return True if this field represents the name of the object.
+
+        Matches OpenStudio logic: a field is a name field if it has \\reference
+        tags (and no \\object-list), OR if its name is literally "Name" and its
+        type is alpha or node.
+        """
+        p = self.properties
+        has_references = bool(p.references)
+        has_object_lists = bool(p.objectLists)
+        if has_references and not has_object_lists:
+            return True
+        return (
+            self.name.lower() == "name"
+            and p.type in (IddFieldType.AlphaType, IddFieldType.NodeType)
+        )
+
     def __repr__(self):
         return f"{format_leading(field_id=self.field_id, is_last_field=self.is_last_field)}\\field {self.name}\n{self.properties}"
 

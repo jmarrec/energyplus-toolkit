@@ -230,6 +230,15 @@ class IddObject:
     def __repr__(self) -> str:
         return self.name
 
+    def name_field_index(self) -> int | None:
+        """Return the index of the name field, or None if absent.
+
+        It takes field 0 and does IddField::is_name_field, and if so returns 0.  Otherwise it returns None.
+        """
+        if self.fields and self.fields[0].is_name_field():
+            return 0
+        return None
+
     def __str__(self) -> str:
         lines = []
 

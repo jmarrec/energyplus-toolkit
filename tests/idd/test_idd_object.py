@@ -477,3 +477,42 @@ def test_parse_idd_preserve_useless_fields_to_please_idfeditor():
     assert idd_obj._original_number_of_fields == 502
 
     assert str(idd_obj) == ori_text
+
+
+def test_idd_object_name_field_index_with_reference():
+    """name_field_index returns 0 for an object whose first field has \\reference."""
+    group = "Thermal Zones and Surfaces"
+    ori_text = """\
+Zone,
+       \\memo Provides a thermal zone description including parameters related to the
+  A1 , \\field Name
+       \\type alpha
+       \\reference Zones
+       \\reference ZoneNames
+  N1 ; \\field Floor Area
+       \\type real
+       \\units m2
+"""
+    idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
+    assert idd_obj.name_field_index() == 0
+
+
+def test_idd_object_name_field_index_none_for_no_name():
+    """name_field_index returns None for objects with no name field (e.g. SimulationControl)."""
+    group = "Simulation Parameters"
+    ori_text = """\
+SimulationControl,
+       \\unique-object
+  A1 , \\field Do Zone Sizing Calculation
+       \\type choice
+       \\key Yes
+       \\key No
+       \\default No
+  A2 ; \\field Do System Sizing Calculation
+       \\type choice
+       \\key Yes
+       \\key No
+       \\default No
+"""
+    idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
+    assert idd_obj.name_field_index() is None

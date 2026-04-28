@@ -263,3 +263,47 @@ def test_parse_idd_numeric_default():
     assert not field_props.externalLists
 
     assert str(field) == ori_text
+
+
+def test_is_name_field_with_references():
+    """A field with \\reference tags (and no \\object-list) is a name field."""
+    field = IddField.load(
+        objectName="Zone",
+        field_lines=r"""  A1 , \field Name
+       \type alpha
+       \reference Zones
+       \reference ZoneNames""".splitlines(),
+    )
+    assert field.is_name_field()
+
+
+def test_is_name_field_literal_name_alpha():
+    """A field literally named 'Name' with alpha type is a name field."""
+    field = IddField.load(
+        objectName="SomeObject",
+        field_lines=r"""  A1 , \field Name
+       \type alpha""".splitlines(),
+    )
+    assert field.is_name_field()
+
+
+def test_is_name_field_with_object_list_not_name():
+    """A field with both \\reference and \\object-list is NOT a name field."""
+    field = IddField.load(
+        objectName="SomeObject",
+        field_lines=r"""  A1 , \field Component Name
+       \type object-list
+       \object-list validBranchEquipmentNames
+       \reference SomeRef""".splitlines(),
+    )
+    assert not field.is_name_field()
+
+
+def test_is_name_field_plain_alpha_not_name():
+    """A plain alpha field that isn't named 'Name' and has no references is not a name field."""
+    field = IddField.load(
+        objectName="SomeObject",
+        field_lines=r"""  A1 , \field Description
+       \type alpha""".splitlines(),
+    )
+    assert not field.is_name_field()

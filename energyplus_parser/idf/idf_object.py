@@ -158,10 +158,31 @@ class IdfObject:
     # Queries
     # ------------------------------------------------------------------
 
+    def nameFieldIndex(self) -> int | None:
+        """Return the index of the name field, delegating to the IddObject."""
+        return self.idd_object.name_field_index()
+
     @property
     def name(self) -> str | None:
-        """Value of the first field (the object name in most IDD objects)."""
-        return self.getString(0, return_default=True) if self._fields else None
+        """Return the value of the name field, or None if absent or empty."""
+        idx = self.nameFieldIndex()
+        if idx is None:
+            return None
+        return self.getString(idx, return_default=False) or None
+
+    def nameString(self, return_default: bool = False) -> str:
+        """Return the name field value, or an empty string if absent."""
+        idx = self.nameFieldIndex()
+        if idx is None:
+            return ""
+        return self.getString(idx, return_default=return_default) or ""
+
+    def setName(self, value: str) -> None:
+        """Set the name field value.  Raises if the object has no name field."""
+        idx = self.nameFieldIndex()
+        if idx is None:
+            raise IdfObjectError(f"Object '{self.idd_object.name}' has no name field")
+        self.setString(idx, value)
 
     def num_fields(self) -> int:
         """Total number of fields currently in this object (fixed + extensible)."""
