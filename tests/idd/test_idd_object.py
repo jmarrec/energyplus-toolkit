@@ -1,4 +1,4 @@
-from energyplus_parser.constants import BLOCK_INDENT
+from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import IddField
 from energyplus_parser.idd.idd_object import IddObject, IddObjectProperties
 

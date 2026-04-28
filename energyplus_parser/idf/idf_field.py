@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
 
-from energyplus_parser.constants import AUTOSIZE_VALUE, format_leading
+from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE
+from energyplus_parser.idf.idf_constants import format_idf_field
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
 
 
@@ -29,7 +30,7 @@ class IdfField(ABC):
 
     @staticmethod
     def from_idd_field(idd_field) -> "IdfField":
-        field_type = idd_field.type
+        field_type = idd_field.properties.type
 
         field: IdfField
         if field_type == IddFieldType.AlphaType:
@@ -41,17 +42,17 @@ class IdfField(ABC):
         elif field_type == IddFieldType.ChoiceType:
             field = ChoiceField(idd_field=idd_field)
         elif field_type == IddFieldType.NodeType:
-            raise NotImplementedError("NodeField not implemented yet")
+            field = NodeField(idd_field=idd_field)
         elif field_type == IddFieldType.ObjectListType:
-            raise NotImplementedError("ObjectListField not implemented yet")
+            field = ObjectListField(idd_field=idd_field)
         elif field_type == IddFieldType.ExternalListType:
-            raise NotImplementedError("ExternalListField not implemented yet")
+            field = ExternalListField(idd_field=idd_field)
         elif field_type == IddFieldType.URLType:
-            raise NotImplementedError("URLField not implemented yet")
+            field = URLField(idd_field=idd_field)
         elif field_type == IddFieldType.HandleType:
-            raise NotImplementedError("HandleField not implemented yet")
+            field = HandleField(idd_field=idd_field)
         else:
-            raise ValueError(f"Unknown field type: {field_type}")
+            raise ValueError(f"Unknown field type: {field_type} for field {idd_field.name}")
 
         return field
 
@@ -80,11 +81,14 @@ class IdfField(ABC):
         self._value = None
 
     def text(self, is_last_field: bool = False) -> str:
-        val = str(self.value(return_default=True)) or ""
-        val = f"{format_leading(field_id=val, is_last_field=is_last_field)}!- {self.idd_field.name}"
-        if self.idd_field.properties.units:
-            val += f" {{{self.idd_field.properties.units}}}"
-        return str(val)
+        v = self.value(return_default=True)
+        val = str(v) if v is not None else ""
+        return format_idf_field(
+            value=val,
+            is_last_field=is_last_field,
+            field_name=self.idd_field.name,
+            units=self.idd_field.properties.units,
+        )
 
     def __repr__(self) -> str:
         default_attr = " [defaulted]" if self.is_defaulted() else ""
@@ -235,6 +239,8 @@ class IntegerField(NumericField):
             self.minimum_value = int(self.minimum_value)
         if self.maximum_value is not None:
             self.maximum_value = int(self.maximum_value)
+        if isinstance(self._default_value, float):
+            self._default_value = int(self._default_value)
 
     def setInt(self, value: int) -> None:
         if not isinstance(value, (float, int)):
@@ -290,7 +296,7 @@ class ChoiceField(IdfField):
 
     def setBool(self, value: bool):
         if not self.is_boolean:
-            raise FieldValidationError("This choice field is not a boolean field")
+            raise FieldValidationError("This choice field '{self.idd_field.name}' is not a boolean field")
         self._value = "Yes" if value else "No"
 
     def validate(self):
@@ -301,5 +307,35 @@ class ChoiceField(IdfField):
     def _canonical_validate_choice(self, value: str):
         v = self._canonical_map.get(value.lower(), None)
         if v is None:
-            raise FieldValidationError(f"Invalid choice: {value}. Valid choices are: {self.valid_choices}")
+            raise FieldValidationError(f"Field '{self.idd_field.name}' - Invalid choice: {value}. Valid choices are: {self.valid_choices}")
         return v
+
+
+class NodeField(AlphaField):
+    """A node-name field — stored as a plain string."""
+
+    pass
+
+
+class ObjectListField(AlphaField):
+    """A field that references another IdfObject by name — stored as a plain string."""
+
+    pass
+
+
+class ExternalListField(AlphaField):
+    """A field that references an entry in an external list — stored as a plain string."""
+
+    pass
+
+
+class URLField(AlphaField):
+    """A URL field — stored as a plain string."""
+
+    pass
+
+
+class HandleField(AlphaField):
+    """A handle (UUID) field — stored as a plain string."""
+
+    pass

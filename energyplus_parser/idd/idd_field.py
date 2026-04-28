@@ -1,7 +1,7 @@
 import logging
 from enum import IntEnum, StrEnum
 
-from energyplus_parser.constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
+from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)

@@ -1,0 +1,287 @@
+import logging
+
+from energyplus_parser.idf import idf_constants
+from energyplus_parser.idd.idd_object import IddObject
+from energyplus_parser.idf.idf_field import (
+    IdfField,
+    IntegerField,
+    NumericField,
+    NumericMode,
+    RealField,
+)
+
+LOG = logging.getLogger("IdfObject")
+LOG.setLevel(logging.INFO)
+
+
+class IdfObjectError(ValueError):
+    pass
+
+
+class IdfObject:
+    """Holds field data for one EnergyPlus IDF object instance.
+
+    The schema (field names, types, bounds, defaults) comes from the paired
+    IddObject.  Field values are stored as typed IdfField subclasses.
+
+    Field indexing is 0-based and covers non-extensible fields first, then
+    extensible groups in order:
+
+        index 0 … n-1          →  fixed fields (idd_object.fields)
+        index n … n+g-1        →  extensible group 0
+        index n+g … n+2g-1     →  extensible group 1
+        …                         (g = idd_object.properties.numExtensible)
+    """
+
+    def __init__(self, idd_object: IddObject) -> None:
+        self.idd_object: IddObject = idd_object
+        self.comment: str = ""
+        # Fixed (non-extensible) fields, one per idd_object.fields entry.
+        self._fields: list[IdfField] = [IdfField.from_idd_field(f) for f in idd_object.fields]
+        # Each inner list is one extensible group, sized to numExtensible.
+        self._extensible_groups: list[list[IdfField]] = []
+
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
+
+    def _new_extensible_group(self) -> list[IdfField]:
+        return [IdfField.from_idd_field(f) for f in self.idd_object.extensible_fields]
+
+    # ------------------------------------------------------------------
+    # Parsing
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def load(cls, idd_object: IddObject, text: str) -> "IdfObject":
+        """Parse an IDF object text block and return a populated IdfObject."""
+        obj = cls(idd_object=idd_object)
+        obj._parse(text)
+        return obj
+
+    def _parse(self, text: str) -> None:
+        """Populate fields by parsing IDF object text.
+
+        The text should contain the full object block, e.g.::
+
+            ! optional preceding comment
+            ObjectType,
+              value1,  !- Field 1
+              value2;  !- Field 2
+        """
+        comment_lines: list[str] = []
+        tokens: list[str] = []  # [object_type, field1_value, field2_value, …]
+        object_type_seen = False
+
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            if stripped.startswith("!"):
+                if not object_type_seen:
+                    comment_lines.append(stripped)
+                continue
+
+            # Strip inline comment
+            content = stripped.split("!")[0].strip()
+            if not content:
+                continue
+
+            # Tokenise: each separator (, or ;) ends a field value.
+            current = ""
+            for ch in content:
+                if ch in ",;":
+                    tokens.append(current.strip())
+                    current = ""
+                    if not object_type_seen:
+                        object_type_seen = True
+                else:
+                    current += ch
+            # Any trailing content after the last separator is ignored
+            # (shouldn't happen in valid IDF).
+
+        self.comment = "\n".join(comment_lines)
+
+        if not tokens:
+            raise IdfObjectError(f"No parseable content found for object '{self.idd_object.name}'")
+
+        object_type = tokens[0]
+        if object_type.lower() != self.idd_object.name.lower():
+            raise IdfObjectError(
+                f"Expected object type '{self.idd_object.name}', got '{object_type}'"
+            )
+
+        n_fixed = len(self._fields)
+        n_ext = self.idd_object.properties.numExtensible
+
+        for idd_field_index, value in enumerate(tokens[1:]):
+            if idd_field_index < n_fixed:
+                idf_field = self._fields[idd_field_index]
+            elif self.idd_object.properties.extensible and n_ext > 0:
+                ext_pos = idd_field_index - n_fixed
+                group_index = ext_pos // n_ext
+                field_index = ext_pos % n_ext
+                if field_index == 0:
+                    self._extensible_groups.append(self._new_extensible_group())
+                idf_field = self._extensible_groups[group_index][field_index]
+            else:
+                LOG.warning(
+                    f"Extra field at index {idd_field_index} in '{self.idd_object.name}' — ignoring"
+                )
+                continue
+
+            if value:
+                idf_field.setString(value)
+
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
+
+    @property
+    def name(self) -> str | None:
+        """Value of the first field (the object name in most IDD objects)."""
+        return self.getString(0, return_default=True) if self._fields else None
+
+    def num_fields(self) -> int:
+        """Total number of fields currently in this object (fixed + extensible)."""
+        return len(self._fields) + sum(len(g) for g in self._extensible_groups)
+
+    def num_extensible_groups(self) -> int:
+        return len(self._extensible_groups)
+
+    # ------------------------------------------------------------------
+    # Field access by index
+    # ------------------------------------------------------------------
+
+    def _get_field(self, index: int) -> IdfField:
+        n_fixed = len(self._fields)
+        if index < n_fixed:
+            return self._fields[index]
+        ext_index = index - n_fixed
+        n_ext = self.idd_object.properties.numExtensible
+        if n_ext == 0:
+            raise IndexError(f"Index {index} out of range for non-extensible object '{self.idd_object.name}'")
+        group_index = ext_index // n_ext
+        field_index = ext_index % n_ext
+        if group_index >= len(self._extensible_groups):
+            raise IndexError(
+                f"Index {index} out of range — only {len(self._extensible_groups)} extensible group(s) present"
+            )
+        return self._extensible_groups[group_index][field_index]
+
+    def getString(self, index: int, return_default: bool = False) -> str | None:
+        field = self._get_field(index)
+        val = field.value(return_default=return_default)
+        if val is None:
+            return None
+        return str(val)
+
+    def setString(self, index: int, value: str) -> None:
+        self._get_field(index).setString(value)
+
+    def getDouble(self, index: int, return_default: bool = False) -> float | None:
+        field = self._get_field(index)
+        if not isinstance(field, NumericField):
+            raise TypeError(f"Field {index} is not a numeric field")
+        val = field.value(return_default=return_default)
+        if val is None or isinstance(val, NumericMode):
+            return None
+        return float(val)
+
+    def setDouble(self, index: int, value: float) -> None:
+        field = self._get_field(index)
+        if not isinstance(field, RealField):
+            raise TypeError(f"Field {index} is not a RealField")
+        field.setDouble(value)
+
+    def getInt(self, index: int, return_default: bool = False) -> int | None:
+        field = self._get_field(index)
+        if not isinstance(field, IntegerField):
+            raise TypeError(f"Field {index} is not an IntegerField")
+        val = field.value(return_default=return_default)
+        if val is None or isinstance(val, NumericMode):
+            return None
+        return int(val)
+
+    def setInt(self, index: int, value: int) -> None:
+        field = self._get_field(index)
+        if not isinstance(field, IntegerField):
+            raise TypeError(f"Field {index} is not an IntegerField")
+        field.setInt(value)
+
+    # ------------------------------------------------------------------
+    # Extensible group management
+    # ------------------------------------------------------------------
+
+    def push_extensible_group(self, values: list[str] | None = None) -> list[IdfField]:
+        """Append a new extensible group, optionally pre-populated with *values*.
+
+        Returns the list of IdfField instances for the new group.
+        """
+        if not self.idd_object.properties.extensible:
+            raise IdfObjectError(f"Object '{self.idd_object.name}' is not extensible")
+        group = self._new_extensible_group()
+        if values:
+            for i, v in enumerate(values):
+                if i < len(group) and v:
+                    group[i].setString(v)
+        self._extensible_groups.append(group)
+        return group
+
+    def get_extensible_group(self, group_index: int) -> list[IdfField]:
+        """Return the IdfField list for the extensible group at *group_index*."""
+        if group_index >= len(self._extensible_groups):
+            raise IndexError(f"Extensible group index {group_index} out of range")
+        return self._extensible_groups[group_index]
+
+    def pop_extensible_group(self) -> list[IdfField]:
+        """Remove and return the last extensible group."""
+        if not self._extensible_groups:
+            raise IdfObjectError("No extensible groups to pop")
+        return self._extensible_groups.pop()
+
+    def clear_extensible_groups(self) -> list[list[IdfField]]:
+        """Remove all extensible groups and return them."""
+        groups = self._extensible_groups[:]
+        self._extensible_groups.clear()
+        return groups
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
+    def validate(self) -> None:
+        for field in self._fields:
+            field.validate()
+        for group in self._extensible_groups:
+            for field in group:
+                field.validate()
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
+    def __str__(self) -> str:
+        lines: list[str] = []
+
+        if self.comment:
+            lines.append(self.comment)
+
+        all_fields: list[IdfField] = list(self._fields) + [
+            f for g in self._extensible_groups for f in g
+        ]
+
+        if not all_fields:
+            lines.append(f"{' ' * idf_constants.IDF_LEADING}{self.idd_object.name};")
+        else:
+            lines.append(f"{' ' * idf_constants.IDF_LEADING}{self.idd_object.name},")
+            for i, field in enumerate(all_fields):
+                is_last = i == len(all_fields) - 1
+                lines.append(field.text(is_last_field=is_last))
+
+        lines.append("")  # blank line at end
+        return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        return f"IdfObject({self.idd_object.name!r}, name={self.name!r})"
