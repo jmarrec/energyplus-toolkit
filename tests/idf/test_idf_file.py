@@ -426,9 +426,8 @@ def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
     for line in field_lines:
         assert line.startswith("    "), f"Field line not indented by 4: {line!r}"
 
-    # Spot-check: Version object
-    version_block_start = next(i for i, l in enumerate(lines) if l == "  Version,")
-    assert lines[version_block_start + 1] == "    26.1;                    !- Version Identifier"
+    # Spot-check: Version object — singleLine format, all on one line
+    assert any(l == "  Version,26.1;" for l in lines), "Version must be on a single line"
 
     # Spot-check: Building object name field
     building_start = next(i for i, l in enumerate(lines) if l == "  Building,")
