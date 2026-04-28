@@ -81,7 +81,7 @@ class IdfField(ABC):
         self._value = None
 
     def text(self, is_last_field: bool = False) -> str:
-        v = self.value(return_default=True)
+        v = self.value(return_default=False)
         val = str(v) if v is not None else ""
         return format_idf_field(
             value=val,
