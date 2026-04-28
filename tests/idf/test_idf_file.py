@@ -14,7 +14,7 @@ RESOURCES = Path(__file__).parent.parent / "resources"
 
 @pytest.fixture(scope="session")
 def ep_idd() -> IddFile:
-    return IddFile.load(RESOURCES / "Energy+.idd")
+    return IddFile.load(RESOURCES / "V26-1-0-Energy+.idd")
 
 
 # ---------------------------------------------------------------------------
