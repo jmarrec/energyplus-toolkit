@@ -4,7 +4,7 @@ from energyplus_parser.idd.idd_file import IddFile
 
 
 def test_full_ep_idd():
-    idd_path = Path('~/Software/Others/EnergyPlus/idd/Energy+.idd.in').expanduser()
+    idd_path = Path(__file__).parent.parent / "resources" / "Energy+.idd"
     idd_file = IddFile.load(path=idd_path)
 
     assert len(idd_file.objects) == 859
