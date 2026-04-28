@@ -1,14 +1,8 @@
 import logging
 
-from energyplus_parser.idf import idf_constants
 from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idf.idf_field import (
-    IdfField,
-    IntegerField,
-    NumericField,
-    NumericMode,
-    RealField,
-)
+from energyplus_parser.idf import idf_constants
+from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
 
 LOG = logging.getLogger("IdfObject")
 LOG.setLevel(logging.INFO)
@@ -114,9 +108,7 @@ class IdfObject:
 
         object_type = tokens[0]
         if object_type.lower() != self.idd_object.name.lower():
-            raise IdfObjectError(
-                f"Expected object type '{self.idd_object.name}', got '{object_type}'"
-            )
+            raise IdfObjectError(f"Expected object type '{self.idd_object.name}', got '{object_type}'")
 
         n_fixed = len(self._fields)
         n_ext = self.idd_object.properties.numExtensible
@@ -132,9 +124,7 @@ class IdfObject:
                     self._extensible_groups.append(self._new_extensible_group())
                 idf_field = self._extensible_groups[group_index][field_index]
             else:
-                LOG.warning(
-                    f"Extra field at index {idd_field_index} in '{self.idd_object.name}' — ignoring"
-                )
+                LOG.warning(f"Extra field at index {idd_field_index} in '{self.idd_object.name}' — ignoring")
                 continue
 
             if value:
@@ -324,10 +314,10 @@ class IdfObject:
         if self.comment:
             lines.append(self.comment)
 
-        active_fixed = list(self._fields[:self._num_active_fields]) if not self._extensible_groups else list(self._fields)
-        all_fields: list[IdfField] = active_fixed + [
-            f for g in self._extensible_groups for f in g
-        ]
+        active_fixed = (
+            list(self._fields[: self._num_active_fields]) if not self._extensible_groups else list(self._fields)
+        )
+        all_fields: list[IdfField] = active_fixed + [f for g in self._extensible_groups for f in g]
 
         if not all_fields:
             lines.append(f"{' ' * idf_constants.IDF_LEADING}{self.idd_object.name};")

@@ -11,7 +11,6 @@ from energyplus_parser.idf.idf_field import (
 )
 from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build IddObjects from inline IDD text
 # ---------------------------------------------------------------------------
@@ -189,9 +188,9 @@ def test_idf_object_get_value_types():
 
     idd_obj = make_idd_object(ZONE_IDD)
     obj = IdfObject(idd_object=idd_obj)
-    obj.setString(0, "MyZone")   # AlphaField  → str
-    obj.setDouble(1, 45.0)       # RealField   → float
-    obj.setDouble(2, 1.0)        # RealField   → float
+    obj.setString(0, "MyZone")  # AlphaField  → str
+    obj.setDouble(1, 45.0)  # RealField   → float
+    obj.setDouble(2, 1.0)  # RealField   → float
 
     assert obj.get_value(0) == "MyZone"
     assert isinstance(obj.get_value(0), str)
@@ -240,8 +239,6 @@ Coil:Heating:Fuel,
     # Parsing "autosize" from text also yields NumericMode
     obj2 = IdfObject.load(idd_object=idd_obj, text="Coil:Heating:Fuel,\n  MyCoil,\n  autosize;\n")
     assert obj2.get_value(1) == NumericMode.AUTOSIZE
-
-
 
 
 def test_idf_object_set_get_string():
@@ -439,9 +436,7 @@ def test_idf_object_push_extensible_group():
 
     assert not obj.idd_object.properties.extensible or obj.num_extensible_groups() == 0
 
-    group = obj.push_extensible_group(
-        ["Coil:Heating:Fuel", "HeatingCoil1", "HeatingCoil1Inlet", "HeatingCoil1Outlet"]
-    )
+    group = obj.push_extensible_group(["Coil:Heating:Fuel", "HeatingCoil1", "HeatingCoil1Inlet", "HeatingCoil1Outlet"])
     assert len(group) == 4
     assert obj.num_extensible_groups() == 1
     assert obj.num_fields() == 2 + 4  # 2 fixed + 4 ext
@@ -451,9 +446,7 @@ def test_idf_object_extensible_group_field_access_by_index():
     idd_obj = make_idd_object(BRANCH_IDD)
     obj = IdfObject(idd_object=idd_obj)
 
-    obj.push_extensible_group(
-        ["Coil:Heating:Fuel", "HeatingCoil1", "Inlet", "Outlet"]
-    )
+    obj.push_extensible_group(["Coil:Heating:Fuel", "HeatingCoil1", "Inlet", "Outlet"])
 
     # Fixed fields: 0=Name, 1=Pressure Drop Curve Name
     # Ext group 0: index 2..5
@@ -601,19 +594,22 @@ SimulationControl,
 """
     obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
-    expected = "\n".join([
-        "SimulationControl,",
-        "  No,                      !- Do Zone Sizing Calculation",
-        "  No,                      !- Do System Sizing Calculation",
-        "  No,                      !- Do Plant Sizing Calculation",
-        "  Yes,                     !- Run Simulation for Sizing Periods",
-        "  Yes,                     !- Run Simulation for Weather File Run Periods",
-        "  No,                      !- Do HVAC Sizing Simulation for Sizing Periods",
-        "  1;                       !- Maximum Number of HVAC Sizing Simulation Passes",
-        "",
-    ])
+    expected = "\n".join(
+        [
+            "SimulationControl,",
+            "  No,                      !- Do Zone Sizing Calculation",
+            "  No,                      !- Do System Sizing Calculation",
+            "  No,                      !- Do Plant Sizing Calculation",
+            "  Yes,                     !- Run Simulation for Sizing Periods",
+            "  Yes,                     !- Run Simulation for Weather File Run Periods",
+            "  No,                      !- Do HVAC Sizing Simulation for Sizing Periods",
+            "  1;                       !- Maximum Number of HVAC Sizing Simulation Passes",
+            "",
+        ]
+    )
 
     assert str(obj) == expected
+
 
 @pytest.mark.parametrize("leading", [0, 2, 4])
 def test_idf_object_str_exact_simulation_control(monkeypatch, leading):
@@ -637,17 +633,19 @@ SimulationControl,
 
     L = " " * leading
     I = " " * (leading + idf_constants.IDF_INDENT)
-    expected = "\n".join([
-        f"{L}SimulationControl,",
-        f"{I}No,                      !- Do Zone Sizing Calculation",
-        f"{I}No,                      !- Do System Sizing Calculation",
-        f"{I}No,                      !- Do Plant Sizing Calculation",
-        f"{I}Yes,                     !- Run Simulation for Sizing Periods",
-        f"{I}Yes,                     !- Run Simulation for Weather File Run Periods",
-        f"{I}No,                      !- Do HVAC Sizing Simulation for Sizing Periods",
-        f"{I}1;                       !- Maximum Number of HVAC Sizing Simulation Passes",
-        "",
-    ])
+    expected = "\n".join(
+        [
+            f"{L}SimulationControl,",
+            f"{I}No,                      !- Do Zone Sizing Calculation",
+            f"{I}No,                      !- Do System Sizing Calculation",
+            f"{I}No,                      !- Do Plant Sizing Calculation",
+            f"{I}Yes,                     !- Run Simulation for Sizing Periods",
+            f"{I}Yes,                     !- Run Simulation for Weather File Run Periods",
+            f"{I}No,                      !- Do HVAC Sizing Simulation for Sizing Periods",
+            f"{I}1;                       !- Maximum Number of HVAC Sizing Simulation Passes",
+            "",
+        ]
+    )
 
     assert str(obj) == expected
 
@@ -729,41 +727,44 @@ def test_idf_object_str_extensible_group_lifecycle():
 
     # Before any extensible groups: only 2 fixed fields
     assert obj._num_active_fields == 1
-    expected_before = "\n".join([
-        "Branch,",
-        "  Supply Branch;           !- Name",
-        "",
-    ])
+    expected_before = "\n".join(
+        [
+            "Branch,",
+            "  Supply Branch;           !- Name",
+            "",
+        ]
+    )
     assert str(obj) == expected_before
 
     # Push one extensible group (4 fields per group)
     obj.push_extensible_group(["Pump:VariableSpeed", "Pump", "Pump-Inlet", "Pump-Outlet"])
     assert obj._num_active_fields == 2
-    expected_with_group = "\n".join([
-        "Branch,",
-        "  Supply Branch,           !- Name",
-        "  ,                        !- Pressure Drop Curve Name",
-        "  Pump:VariableSpeed,      !- Component Object Type",
-        "  Pump,                    !- Component Name",
-        "  Pump-Inlet,              !- Component Inlet Node Name",
-        "  Pump-Outlet;             !- Component Outlet Node Name",
-        "",
-    ])
+    expected_with_group = "\n".join(
+        [
+            "Branch,",
+            "  Supply Branch,           !- Name",
+            "  ,                        !- Pressure Drop Curve Name",
+            "  Pump:VariableSpeed,      !- Component Object Type",
+            "  Pump,                    !- Component Name",
+            "  Pump-Inlet,              !- Component Inlet Node Name",
+            "  Pump-Outlet;             !- Component Outlet Node Name",
+            "",
+        ]
+    )
     assert str(obj) == expected_with_group
 
     # Clear extensible groups: fixed fields stay active, no extensible fields
     obj.clear_extensible_groups()
     assert obj._num_active_fields == 2
-    expected_after_clear = "\n".join([
-        "Branch,",
-        "  Supply Branch,           !- Name",
-        "  ;                        !- Pressure Drop Curve Name",
-        "",
-    ])
+    expected_after_clear = "\n".join(
+        [
+            "Branch,",
+            "  Supply Branch,           !- Name",
+            "  ;                        !- Pressure Drop Curve Name",
+            "",
+        ]
+    )
     assert str(obj) == expected_after_clear
-
-
-
 
 
 def test_idf_object_repr():

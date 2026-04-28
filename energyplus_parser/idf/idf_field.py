@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 
 from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE
-from energyplus_parser.idf.idf_constants import format_idf_field
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
+from energyplus_parser.idf.idf_constants import format_idf_field
 
 
 class NumericMode(StrEnum):
@@ -307,7 +307,9 @@ class ChoiceField(IdfField):
     def _canonical_validate_choice(self, value: str):
         v = self._canonical_map.get(value.lower(), None)
         if v is None:
-            raise FieldValidationError(f"Field '{self.idd_field.name}' - Invalid choice: {value}. Valid choices are: {self.valid_choices}")
+            raise FieldValidationError(
+                f"Field '{self.idd_field.name}' - Invalid choice: {value}. Valid choices are: {self.valid_choices}"
+            )
         return v
 
 

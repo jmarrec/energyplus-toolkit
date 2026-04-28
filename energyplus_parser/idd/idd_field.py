@@ -475,10 +475,7 @@ class IddField:
         has_object_lists = bool(p.objectLists)
         if has_references and not has_object_lists:
             return True
-        return (
-            self.name.lower() == "name"
-            and p.type in (IddFieldType.AlphaType, IddFieldType.NodeType)
-        )
+        return self.name.lower() == "name" and p.type in (IddFieldType.AlphaType, IddFieldType.NodeType)
 
     def __repr__(self):
         return f"{format_leading(field_id=self.field_id, is_last_field=self.is_last_field)}\\field {self.name}\n{self.properties}"
