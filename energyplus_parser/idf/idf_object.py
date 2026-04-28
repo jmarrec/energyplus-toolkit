@@ -40,6 +40,12 @@ class IdfObject:
         self._fields: list[IdfField] = [IdfField.from_idd_field(f) for f in idd_object.fields]
         # Each inner list is one extensible group, sized to numExtensible.
         self._extensible_groups: list[list[IdfField]] = []
+        # Number of fixed fields included in serialisation.  Starts at minFields,
+        # or 1 when minFields is not specified (matching OpenStudio behaviour).
+        # Writing a field at a higher index extends this automatically.
+        min_f = idd_object.properties.minFields
+        self._num_active_fields: int = min_f if min_f > 0 else min(1, len(self._fields))
+        self._min_active_fields: int = self._num_active_fields  # floor for resets
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -134,6 +140,20 @@ class IdfObject:
             if value:
                 idf_field.setString(value)
 
+        # After parsing, active fields = number of fixed fields seen in the text
+        # (bounded by n_fixed), but never below the initial minFields value.
+        n_fixed_parsed = min(len(tokens) - 1, n_fixed)
+        self._num_active_fields = max(self._num_active_fields, n_fixed_parsed)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _extend_active_fields(self, index: int) -> None:
+        """Ensure fixed fields up to and including *index* are serialised."""
+        if index < len(self._fields):
+            self._num_active_fields = max(self._num_active_fields, index + 1)
+
     # ------------------------------------------------------------------
     # Queries
     # ------------------------------------------------------------------
@@ -145,7 +165,8 @@ class IdfObject:
 
     def num_fields(self) -> int:
         """Total number of fields currently in this object (fixed + extensible)."""
-        return len(self._fields) + sum(len(g) for g in self._extensible_groups)
+        n_fixed = len(self._fields) if self._extensible_groups else self._num_active_fields
+        return n_fixed + sum(len(g) for g in self._extensible_groups)
 
     def num_extensible_groups(self) -> int:
         return len(self._extensible_groups)
@@ -166,7 +187,7 @@ class IdfObject:
         field_index = ext_index % n_ext
         if group_index >= len(self._extensible_groups):
             raise IndexError(
-                f"Index {index} out of range — only {len(self._extensible_groups)} extensible group(s) present"
+                f"Index {index} out of range — only {len(self._extensible_groups)} extensible group(s) present in object '{self.idd_object.name}'"
             )
         return self._extensible_groups[group_index][field_index]
 
@@ -179,6 +200,7 @@ class IdfObject:
 
     def setString(self, index: int, value: str) -> None:
         self._get_field(index).setString(value)
+        self._extend_active_fields(index)
 
     def getDouble(self, index: int, return_default: bool = False) -> float | None:
         field = self._get_field(index)
@@ -194,6 +216,7 @@ class IdfObject:
         if not isinstance(field, RealField):
             raise TypeError(f"Field {index} is not a RealField")
         field.setDouble(value)
+        self._extend_active_fields(index)
 
     def getInt(self, index: int, return_default: bool = False) -> int | None:
         field = self._get_field(index)
@@ -209,6 +232,7 @@ class IdfObject:
         if not isinstance(field, IntegerField):
             raise TypeError(f"Field {index} is not an IntegerField")
         field.setInt(value)
+        self._extend_active_fields(index)
 
     # ------------------------------------------------------------------
     # Extensible group management
@@ -227,6 +251,7 @@ class IdfObject:
                 if i < len(group) and v:
                     group[i].setString(v)
         self._extensible_groups.append(group)
+        self._num_active_fields = len(self._fields)
         return group
 
     def get_extensible_group(self, group_index: int) -> list[IdfField]:
@@ -268,7 +293,8 @@ class IdfObject:
         if self.comment:
             lines.append(self.comment)
 
-        all_fields: list[IdfField] = list(self._fields) + [
+        active_fixed = list(self._fields[:self._num_active_fields]) if not self._extensible_groups else list(self._fields)
+        all_fields: list[IdfField] = active_fixed + [
             f for g in self._extensible_groups for f in g
         ]
 

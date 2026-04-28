@@ -75,32 +75,42 @@ Zone,
 
 BRANCH_IDD = """\
 Branch,
-       \\extensible:5
-       \\min-fields 4
-  A1 , \\field Name
-       \\type alpha
+       \\extensible:4
+       \\memo List components on the branch in simulation and connection order
+       \\memo Note: this should NOT include splitters or mixers which define
+       \\memo endpoints of branches
+  A1,  \\field Name
        \\required-field
-  N1 , \\field Maximum Flow Rate
-       \\type real
-       \\autosizable
-       \\minimum 0
-       \\default autosize
-       \\units m3/s
-  A2 , \\field Component Object Type 1
+       \\reference Branches
+  A2,  \\field Pressure Drop Curve Name
+       \\type object-list
+       \\object-list UnivariateFunctions
+       \\note Optional field to include this branch in plant pressure drop calculations
+  A3,  \\field Component 1 Object Type
        \\begin-extensible
-       \\type alpha
-  A3 , \\field Component Name 1
-       \\type alpha
-  A4 , \\field Component Inlet Node Name 1
+       \\required-field
+       \\type object-list
+       \\object-list validBranchEquipmentTypes
+  A4,  \\field Component 1 Name
+       \\required-field
+       \\type object-list
+       \\object-list validBranchEquipmentNames
+  A5,  \\field Component 1 Inlet Node Name
+       \\required-field
        \\type node
-  A5 , \\field Component Outlet Node Name 1
+  A6,  \\field Component 1 Outlet Node Name
+       \\required-field
        \\type node
-  A6 ; \\field Component Branch Control Type 1
-       \\type choice
-       \\key Active
-       \\key Passive
-       \\key BypassWhenFlowOff
-       \\key BypassWhenWithinFlowRateLimits
+  A7,  \\field Component 2 Object Type
+       \\type object-list
+       \\object-list validBranchEquipmentTypes
+  A8,  \\field Component 2 Name
+       \\type object-list
+       \\object-list validBranchEquipmentNames
+  A9,  \\field Component 2 Inlet Node Name
+       \\type node
+  A10; \\field Component 2 Outlet Node Name
+       \\type node
 """
 
 
@@ -281,7 +291,7 @@ def test_idf_object_set_int_wrong_type():
 
 def test_idf_object_load_simulation_control():
     idd_obj = make_idd_object(SIMULATION_CONTROL_IDD)
-    idf_text = """\
+    idf_text = """
 SimulationControl,
   Yes,                     !- Do Zone Sizing Calculation
   Yes,                     !- Do System Sizing Calculation
@@ -300,7 +310,7 @@ SimulationControl,
 
 def test_idf_object_load_preserves_comment():
     idd_obj = make_idd_object(SIMULATION_CONTROL_IDD)
-    idf_text = """\
+    idf_text = """
 ! This is a simulation control block
 SimulationControl,
   No;
@@ -312,7 +322,7 @@ SimulationControl,
 def test_idf_object_load_empty_fields():
     """Empty fields (two consecutive commas) should leave the field at default."""
     idd_obj = make_idd_object(ZONE_IDD)
-    idf_text = """\
+    idf_text = """
 Zone,
   MyZone,
   ,
@@ -345,11 +355,11 @@ def test_idf_object_push_extensible_group():
     assert not obj.idd_object.properties.extensible or obj.num_extensible_groups() == 0
 
     group = obj.push_extensible_group(
-        ["Coil:Heating:Fuel", "HeatingCoil1", "HeatingCoil1Inlet", "HeatingCoil1Outlet", "Active"]
+        ["Coil:Heating:Fuel", "HeatingCoil1", "HeatingCoil1Inlet", "HeatingCoil1Outlet"]
     )
-    assert len(group) == 5
+    assert len(group) == 4
     assert obj.num_extensible_groups() == 1
-    assert obj.num_fields() == 2 + 5  # 2 fixed + 5 ext
+    assert obj.num_fields() == 2 + 4  # 2 fixed + 4 ext
 
 
 def test_idf_object_extensible_group_field_access_by_index():
@@ -357,52 +367,50 @@ def test_idf_object_extensible_group_field_access_by_index():
     obj = IdfObject(idd_object=idd_obj)
 
     obj.push_extensible_group(
-        ["Coil:Heating:Fuel", "HeatingCoil1", "Inlet", "Outlet", "Active"]
+        ["Coil:Heating:Fuel", "HeatingCoil1", "Inlet", "Outlet"]
     )
 
-    # Fixed fields: 0=Name, 1=MaxFlowRate
-    # Ext group 0: index 2..6
+    # Fixed fields: 0=Name, 1=Pressure Drop Curve Name
+    # Ext group 0: index 2..5
     assert obj.getString(2) == "Coil:Heating:Fuel"
     assert obj.getString(3) == "HeatingCoil1"
-    assert obj.getString(6) == "Active"
+    assert obj.getString(5) == "Outlet"
 
 
 def test_idf_object_load_with_extensible_groups():
     idd_obj = make_idd_object(BRANCH_IDD)
-    idf_text = """\
+    idf_text = """
 Branch,
   CW Loop Supply Branch,   !- Name
-  autosize,                !- Maximum Flow Rate {m3/s}
-  Pump:VariableSpeed,      !- Component Object Type 1
-  CW Circ Pump,            !- Component Name 1
-  CW Supply Inlet,         !- Component Inlet Node Name 1
-  CW Pump Outlet,          !- Component Outlet Node Name 1
-  Active,                  !- Component Branch Control Type 1
-  Chiller:Electric:EIR,    !- Component Object Type 2
-  Chiller1,                !- Component Name 2
-  Chiller1 Inlet,          !- Component Inlet Node Name 2
-  Chiller1 Outlet,         !- Component Outlet Node Name 2
-  Active;                  !- Component Branch Control Type 2
+  ,                        !- Pressure Drop Curve Name
+  Pump:VariableSpeed,      !- Component 1 Object Type
+  CW Circ Pump,            !- Component 1 Name
+  CW Supply Inlet,         !- Component 1 Inlet Node Name
+  CW Pump Outlet,          !- Component 1 Outlet Node Name
+  Chiller:Electric:EIR,    !- Component 2 Object Type
+  Chiller1,                !- Component 2 Name
+  Chiller1 Inlet,          !- Component 2 Inlet Node Name
+  Chiller1 Outlet;         !- Component 2 Outlet Node Name
 """
     obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
     assert obj.name == "CW Loop Supply Branch"
     assert obj.num_extensible_groups() == 2
-    assert obj.num_fields() == 2 + 5 + 5  # 2 fixed + 2 groups of 5
+    assert obj.num_fields() == 2 + 4 + 4  # 2 fixed + 2 groups of 4
 
     # First group
     assert obj.getString(2) == "Pump:VariableSpeed"
-    assert obj.getString(6) == "Active"
+    assert obj.getString(5) == "CW Pump Outlet"
     # Second group
-    assert obj.getString(7) == "Chiller:Electric:EIR"
-    assert obj.getString(11) == "Active"
+    assert obj.getString(6) == "Chiller:Electric:EIR"
+    assert obj.getString(9) == "Chiller1 Outlet"
 
 
 def test_idf_object_pop_extensible_group():
     idd_obj = make_idd_object(BRANCH_IDD)
     obj = IdfObject(idd_object=idd_obj)
-    obj.push_extensible_group(["TypeA", "NameA", "Inlet", "Outlet", "Active"])
-    obj.push_extensible_group(["TypeB", "NameB", "Inlet2", "Outlet2", "Passive"])
+    obj.push_extensible_group(["TypeA", "NameA", "Inlet", "Outlet"])
+    obj.push_extensible_group(["TypeB", "NameB", "Inlet2", "Outlet2"])
 
     popped = obj.pop_extensible_group()
     assert obj.num_extensible_groups() == 1
@@ -496,7 +504,17 @@ def test_idf_object_str_with_fields():
 def test_idf_object_str_exact_simulation_control_explicit():
     """Serialisation must match the canonical EnergyPlus IDF format exactly."""
     idd_obj = make_idd_object(SIMULATION_CONTROL_7_FIELDS_IDD)
-    obj = IdfObject(idd_object=idd_obj)
+    idf_text = """
+SimulationControl,
+  No,                      !- Do Zone Sizing Calculation
+  No,                      !- Do System Sizing Calculation
+  No,                      !- Do Plant Sizing Calculation
+  Yes,                     !- Run Simulation for Sizing Periods
+  Yes,                     !- Run Simulation for Weather File Run Periods
+  No,                      !- Do HVAC Sizing Simulation for Sizing Periods
+  1;                       !- Maximum Number of HVAC Sizing Simulation Passes
+"""
+    obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
     expected = "\n".join([
         "SimulationControl,",
@@ -512,8 +530,6 @@ def test_idf_object_str_exact_simulation_control_explicit():
 
     assert str(obj) == expected
 
-    assert str(obj) == expected
-
 @pytest.mark.parametrize("leading", [0, 2, 4])
 def test_idf_object_str_exact_simulation_control(monkeypatch, leading):
     """Serialisation matches the canonical EnergyPlus IDF format for IDF_LEADING=0 and 2."""
@@ -522,7 +538,17 @@ def test_idf_object_str_exact_simulation_control(monkeypatch, leading):
     monkeypatch.setattr(idf_constants, "IDF_LEADING", leading)
 
     idd_obj = make_idd_object(SIMULATION_CONTROL_7_FIELDS_IDD)
-    obj = IdfObject(idd_object=idd_obj)
+    idf_text = """
+SimulationControl,
+  No,
+  No,
+  No,
+  Yes,
+  Yes,
+  No,
+  1;
+"""
+    obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
     L = " " * leading
     I = " " * (leading + idf_constants.IDF_INDENT)
@@ -548,7 +574,50 @@ def test_idf_object_str_long_value_fallback_padding():
     obj.setString(0, "Simple One Zone (Wireframe DXF)")
 
     first_field_line = str(obj).splitlines()[1]
-    assert first_field_line == "  Simple One Zone (Wireframe DXF),  !- Name"
+    assert first_field_line == "  Simple One Zone (Wireframe DXF);  !- Name"
+
+
+def test_idf_object_min_fields_fresh_object():
+    """A freshly constructed Zone (min-fields 1) serialises only the Name field."""
+    idd_obj = make_idd_object(ZONE_IDD)
+    obj = IdfObject(idd_object=idd_obj)
+
+    lines = str(obj).splitlines()
+    assert lines[0] == "Zone,"
+    assert len(lines) == 2  # object-type + Name field (trailing \n not counted by splitlines)
+    assert lines[1].endswith("!- Name")
+    assert lines[1].strip().startswith(";")  # last (only) field gets semicolon
+
+
+def test_idf_object_min_fields_setstring_extends():
+    """Writing a field beyond min-fields extends the active count."""
+    idd_obj = make_idd_object(ZONE_IDD)
+    obj = IdfObject(idd_object=idd_obj)
+    obj.setDouble(2, 5.0)  # X Origin — index 2, beyond min-fields=1
+
+    lines = str(obj).splitlines()
+    # Fields 0 (Name), 1 (Direction), 2 (X Origin) must be present
+    assert len(lines) == 4  # object-type + 3 field lines (trailing \n not counted by splitlines)
+    assert "!- X Origin" in lines[3]
+    assert lines[3].strip().startswith("5.0;")  # last active field gets semicolon
+
+
+def test_idf_object_min_fields_parsed_5():
+    """Parsing a 5-field SimulationControl (min-fields 5) serialises exactly 5 fields."""
+    idd_obj = make_idd_object(SIMULATION_CONTROL_7_FIELDS_IDD)
+    idf_text = """
+SimulationControl,
+  No,
+  No,
+  No,
+  Yes,
+  Yes;
+"""
+    obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
+
+    lines = [l for l in str(obj).splitlines() if l]
+    assert len(lines) == 6  # object-type + 5 field lines
+    assert lines[-1].endswith("Run Simulation for Weather File Run Periods")
 
 
 def test_idf_object_str_roundtrip():
@@ -567,9 +636,49 @@ def test_idf_object_str_roundtrip():
     assert obj2.getDouble(4) == 3.0
 
 
-# ---------------------------------------------------------------------------
-# __repr__
-# ---------------------------------------------------------------------------
+def test_idf_object_str_extensible_group_lifecycle():
+    """Serialise before/after push_extensible_group and after clear_extensible_groups."""
+    idd_obj = make_idd_object(BRANCH_IDD)
+    obj = IdfObject(idd_object=idd_obj)
+    obj.setString(0, "Supply Branch")
+
+    # Before any extensible groups: only 2 fixed fields
+    assert obj._num_active_fields == 1
+    expected_before = "\n".join([
+        "Branch,",
+        "  Supply Branch;           !- Name",
+        "",
+    ])
+    assert str(obj) == expected_before
+
+    # Push one extensible group (4 fields per group)
+    obj.push_extensible_group(["Pump:VariableSpeed", "Pump", "Pump-Inlet", "Pump-Outlet"])
+    assert obj._num_active_fields == 2
+    expected_with_group = "\n".join([
+        "Branch,",
+        "  Supply Branch,           !- Name",
+        "  ,                        !- Pressure Drop Curve Name",
+        "  Pump:VariableSpeed,      !- Component Object Type",
+        "  Pump,                    !- Component Name",
+        "  Pump-Inlet,              !- Component Inlet Node Name",
+        "  Pump-Outlet;             !- Component Outlet Node Name",
+        "",
+    ])
+    assert str(obj) == expected_with_group
+
+    # Clear extensible groups: fixed fields stay active, no extensible fields
+    obj.clear_extensible_groups()
+    assert obj._num_active_fields == 2
+    expected_after_clear = "\n".join([
+        "Branch,",
+        "  Supply Branch,           !- Name",
+        "  ;                        !- Pressure Drop Curve Name",
+        "",
+    ])
+    assert str(obj) == expected_after_clear
+
+
+
 
 
 def test_idf_object_repr():
