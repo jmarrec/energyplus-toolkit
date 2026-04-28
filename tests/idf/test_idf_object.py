@@ -179,8 +179,69 @@ def test_idf_object_set_name_no_name_field_raises():
 
 
 # ---------------------------------------------------------------------------
-# setString / getString by index
+# get_value — native-type accessor
 # ---------------------------------------------------------------------------
+
+
+def test_idf_object_get_value_types():
+    """get_value returns the native Python type for each field class."""
+    from energyplus_parser.idf.idf_field import NumericMode
+
+    idd_obj = make_idd_object(ZONE_IDD)
+    obj = IdfObject(idd_object=idd_obj)
+    obj.setString(0, "MyZone")   # AlphaField  → str
+    obj.setDouble(1, 45.0)       # RealField   → float
+    obj.setDouble(2, 1.0)        # RealField   → float
+
+    assert obj.get_value(0) == "MyZone"
+    assert isinstance(obj.get_value(0), str)
+
+    assert obj.get_value(1) == 45.0
+    assert isinstance(obj.get_value(1), float)
+
+    # Unset field returns None without return_default
+    assert obj.get_value(3) is None
+    # With return_default returns the IDD default (0.0 for Y Origin)
+    assert obj.get_value(3, return_default=True) == 0.0
+
+
+def test_idf_object_get_value_integer():
+    """get_value returns int for IntegerField."""
+    idd_obj = make_idd_object(SIMULATION_CONTROL_7_FIELDS_IDD)
+    idf_text = """
+SimulationControl,
+  No, No, No, Yes, Yes, No,
+  3;
+"""
+    obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
+    assert obj.get_value(6) == 3
+    assert isinstance(obj.get_value(6), int)
+
+
+def test_idf_object_get_value_autosize():
+    """get_value returns NumericMode.AUTOSIZE for an autosized field."""
+    from energyplus_parser.idf.idf_field import NumericMode
+
+    autosize_idd = """\
+Coil:Heating:Fuel,
+  A1, \\field Name
+  N1; \\field Nominal Capacity
+      \\type real
+      \\autosizable
+      \\default autosize
+      \\units W
+"""
+    idd_obj = make_idd_object(autosize_idd)
+    obj = IdfObject(idd_object=idd_obj)
+
+    # Default is autosize; return_default exposes NumericMode
+    assert obj.get_value(1, return_default=True) == NumericMode.AUTOSIZE
+
+    # Parsing "autosize" from text also yields NumericMode
+    obj2 = IdfObject.load(idd_object=idd_obj, text="Coil:Heating:Fuel,\n  MyCoil,\n  autosize;\n")
+    assert obj2.get_value(1) == NumericMode.AUTOSIZE
+
+
 
 
 def test_idf_object_set_get_string():

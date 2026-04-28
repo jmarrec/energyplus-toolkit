@@ -212,6 +212,16 @@ class IdfObject:
             )
         return self._extensible_groups[group_index][field_index]
 
+    def get_value(self, index: int, return_default: bool = False) -> str | int | float | NumericMode | None:
+        """Return the field value as its native Python type.
+
+        Returns ``str`` for alpha/choice/node fields, ``int`` for integer fields,
+        ``float`` for real fields, ``NumericMode`` when the field is set to
+        autosize/autocalculate, and ``None`` when the field is unset (and
+        *return_default* is False).
+        """
+        return self._get_field(index).value(return_default=return_default)
+
     def getString(self, index: int, return_default: bool = False) -> str | None:
         field = self._get_field(index)
         val = field.value(return_default=return_default)
