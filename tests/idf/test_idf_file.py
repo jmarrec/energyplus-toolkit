@@ -389,7 +389,6 @@ Zone,
     assert str(idf) == expected
 
 
-@pytest.mark.xfail(reason="bug: detached comment with no file header is promoted to header")
 def test_idf_file_str_detached_comment_no_header():
     """A standalone comment between two objects when there is no file header should
     remain between those objects in the output, not be promoted to the file header."""

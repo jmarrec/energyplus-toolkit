@@ -1,5 +1,6 @@
 import logging
 
+from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_parser.idd.idd_object import IddObject
 from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
@@ -334,6 +335,10 @@ class IdfObject:
 
     def __str__(self) -> str:
         lines: list[str] = []
+
+        if self.idd_object.name == COMMENT_ONLY_OBJECT_NAME:
+            if self.comment:
+                return f"{self.comment}\n"
 
         if self.comment:
             lines.append(self.comment)

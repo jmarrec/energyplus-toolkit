@@ -15,7 +15,7 @@ class IddFile:
         # The first comment block in an IddFile is its header.
         self.header: str = ""
 
-        self.objects: list[IddObject] = []
+        self.objects: list[IddObject] = [IddObject.load(group="", object_lines=[COMMENT_ONLY_OBJECT_TEXT])]
 
         # Cache for version object
         self._version_object: IddObject | None = None
@@ -37,14 +37,6 @@ class IddFile:
         header_closed = False
         current_group = ""
         object_num = 0
-
-        # Fake a comment-only object
-        comment_only_object = IddObject.load(
-            group=current_group,
-            object_lines=[COMMENT_ONLY_OBJECT_TEXT],
-        )
-        assert comment_only_object.name == COMMENT_ONLY_OBJECT_NAME
-        self.objects.append(comment_only_object)
 
         # Parse the first line as version
         if not lines:

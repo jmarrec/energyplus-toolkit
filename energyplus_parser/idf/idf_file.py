@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_parser.idd.idd_file import IddFile
 from energyplus_parser.idd.idd_object import IddObject
 from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
@@ -71,7 +72,13 @@ class IdfFile:
                         self.header = comment_text
                         header_set = True
                         pending_comment = []
-                    # else: hold onto comments — they will be prepended to the next object
+                    else:
+                        comment_only_idd = self.idd_file.getObject(COMMENT_ONLY_OBJECT_NAME)
+                        if comment_only_idd is not None:
+                            obj = IdfObject(idd_object=comment_only_idd)
+                            obj.comment = comment_text
+                            self._objects.append(obj)
+                        pending_comment = []
                 continue
 
             # ---- comment-only line ----
@@ -86,6 +93,7 @@ class IdfFile:
             # ---- object content line ----
             if not in_object:
                 in_object = True
+                header_set = True  # no comment can become the header once an object has started
                 # prepend any accumulated preceding comments
                 object_lines = list(pending_comment) + [raw_line]
                 pending_comment = []
