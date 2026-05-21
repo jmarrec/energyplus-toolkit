@@ -71,7 +71,8 @@ class IdfObject:
         """
         comment_lines: list[str] = []
         tokens: list[str] = []  # [object_type, field1_value, field2_value, …]
-        object_type_seen = False
+        # Maps token index → user comment text (bare "!" only, not "!-").
+        token_comments: dict[int, str] = {}
 
         for line in text.splitlines():
             stripped = line.strip()
@@ -79,14 +80,27 @@ class IdfObject:
                 continue
 
             if stripped.startswith("!"):
-                if not object_type_seen:
+                # Collect as object comment if we haven't parsed any field value yet
+                # (covers both pre-object comments and in-object pre-field comments).
+                if len(tokens) < 2:
                     comment_lines.append(stripped)
                 continue
 
-            # Strip inline comment
-            content = stripped.split("!")[0].strip()
+            # Split off inline comment, keeping track of user comments (bare "!").
+            user_comment: str | None = None
+            if "!" in stripped:
+                bang_idx = stripped.index("!")
+                content = stripped[:bang_idx].strip()
+                comment_str = stripped[bang_idx:]
+                if not comment_str.startswith("!-"):
+                    user_comment = comment_str[1:].strip()  # text after "! "
+            else:
+                content = stripped
+
             if not content:
                 continue
+
+            tokens_before = len(tokens)
 
             # Tokenise: each separator (, or ;) ends a field value.
             current = ""
@@ -94,12 +108,17 @@ class IdfObject:
                 if ch in ",;":
                     tokens.append(current.strip())
                     current = ""
-                    if not object_type_seen:
-                        object_type_seen = True
                 else:
                     current += ch
             # Any trailing content after the last separator is ignored
             # (shouldn't happen in valid IDF).
+
+            # Associate user comment with the last token added on this line,
+            # but only if it is a field token (index >= 1; index 0 is object type).
+            if user_comment is not None and len(tokens) > tokens_before:
+                last_idx = len(tokens) - 1
+                if last_idx >= 1:
+                    token_comments[last_idx] = user_comment
 
         self.comment = "\n".join(comment_lines)
 
@@ -129,6 +148,10 @@ class IdfObject:
 
             if value:
                 idf_field.setString(value)
+
+            token_idx = idd_field_index + 1  # token 0 is object type
+            if token_idx in token_comments:
+                idf_field.comment = token_comments[token_idx]
 
         # After parsing, active fields = number of fixed fields seen in the text
         # (bounded by n_fixed), but never below the initial minFields value.

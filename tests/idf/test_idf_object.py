@@ -422,7 +422,6 @@ def test_idf_object_load_wrong_type_raises():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="field comments not yet parsed from IDF text")
 def test_idf_object_load_field_comment_stored():
     """A bare ! comment (not !-) after a field value is stored as that field's comment."""
     idd_obj = make_idd_object(ZONE_IDD)
@@ -437,7 +436,6 @@ Zone,
     assert "field comment for the Name field" in obj._fields[0].comment
 
 
-@pytest.mark.xfail(strict=True, reason="field comments not yet parsed from IDF text")
 def test_idf_object_load_field_comment_absent_for_idd_annotation():
     """The standard !- field-name annotation is NOT stored as a field comment."""
     idd_obj = make_idd_object(ZONE_IDD)
@@ -451,7 +449,6 @@ Zone,
     assert obj._fields[1].comment is None
 
 
-@pytest.mark.xfail(strict=True, reason="field comments not yet parsed from IDF text")
 def test_idf_object_load_field_comment_absent_returns_none():
     """A field with no inline comment at all returns None from fieldComment()."""
     idd_obj = make_idd_object(ZONE_IDD)
@@ -465,7 +462,6 @@ Zone,
     assert obj._fields[1].comment is None
 
 
-@pytest.mark.xfail(strict=True, reason="pre-field ! comment inside object block not yet stored as object comment")
 def test_idf_object_load_pre_field_comment_is_object_comment():
     """A ! comment appearing inside the object block before any field value is part of the object comment."""
     idd_obj = make_idd_object(ZONE_IDD)
@@ -482,9 +478,6 @@ Zone,
     assert "field comment for the Name field" in obj._fields[0].comment
 
 
-@pytest.mark.xfail(
-    strict=True, reason="pre-field ! comment inside object block not yet appended to preceding object comment"
-)
 def test_idf_object_load_preceding_and_pre_field_comment_combined():
     """A preceding comment and an in-object pre-field comment are both part of the object comment."""
     idd_obj = make_idd_object(ZONE_IDD)

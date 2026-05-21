@@ -23,6 +23,7 @@ class IdfField(ABC):
         self.idd_field: IddField = idd_field
         self._default_value = idd_field.properties.stringDefault
         self.is_last_field = idd_field.is_last_field
+        self.comment: str | None = None  # user-provided field comment; None = use IDD field name
 
     @property
     def required(self):
@@ -87,6 +88,7 @@ class IdfField(ABC):
             value=val,
             is_last_field=is_last_field,
             field_name=self.idd_field.name,
+            comment=self.comment,
             units=self.idd_field.properties.units,
         )
 

@@ -358,7 +358,7 @@ Zone,
     assert str(idf) == expected
 
 
-def test_idf_file_str_inter_object_comment():
+def test_idf_file_str_attached_object_comment():
     idf_text = """! File header
 
 Zone,

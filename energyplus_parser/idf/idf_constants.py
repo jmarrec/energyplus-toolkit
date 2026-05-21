@@ -6,7 +6,9 @@ IDF_INDENT = 2
 IDF_COMMENT_COLUMN = 27
 
 
-def format_idf_field(value: str, is_last_field: bool, field_name: str, units: str | None = None) -> str:
+def format_idf_field(
+    value: str, is_last_field: bool, field_name: str, comment: str | None = None, units: str | None = None
+) -> str:
     """Serialize one IDF field value line.
 
     The indent is ``IDF_LEADING + IDF_INDENT`` spaces.  The value and its
@@ -31,6 +33,8 @@ def format_idf_field(value: str, is_last_field: bool, field_name: str, units: st
     # IDF_LEADING cancels in the padding formula, so comment column relative to
     # the value start is always IDF_COMMENT_COLUMN - IDF_INDENT.
     padding = max(2, IDF_COMMENT_COLUMN - IDF_INDENT - len(value) - 1)
+    if comment is not None:
+        return f"{' ' * indent}{value}{sep}{' ' * padding}! {comment}"
     line = f"{' ' * indent}{value}{sep}{' ' * padding}!- {field_name}"
     if units:
         line += f" {{{units}}}"
