@@ -389,6 +389,39 @@ Zone,
     assert str(idf) == expected
 
 
+@pytest.mark.xfail(reason="bug: detached comment with no file header is promoted to header")
+def test_idf_file_str_detached_comment_no_header():
+    """A standalone comment between two objects when there is no file header should
+    remain between those objects in the output, not be promoted to the file header."""
+    idf_text = """\
+Zone,
+  ZoneA,
+  10.0;
+
+! A detached comment
+
+Zone,
+  ZoneB,
+  20.0;
+"""
+    idf = IdfFile.loads(idf_text, make_mini_idd(MINI_IDD_ZONE))
+    expected = "\n".join(
+        [
+            "Zone,",
+            "  ZoneA,                   !- Name",
+            "  10.0;                    !- Floor Area {m2}",
+            "",
+            "! A detached comment",
+            "",
+            "Zone,",
+            "  ZoneB,                   !- Name",
+            "  20.0;                    !- Floor Area {m2}",
+            "",
+        ]
+    )
+    assert str(idf) == expected
+
+
 # ---------------------------------------------------------------------------
 # Integration: real IDF serialisation with IDF_LEADING=2
 # ---------------------------------------------------------------------------
