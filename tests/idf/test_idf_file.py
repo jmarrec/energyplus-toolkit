@@ -421,6 +421,63 @@ Zone,
     assert str(idf) == expected
 
 
+def test_idf_file_str_all_comment_types():
+    """A standalone comment between two objects when there is no file header should
+    remain between those objects in the output, not be promoted to the file header."""
+    idf_text = """\
+! This is a header
+! with multiple lines
+
+  ! This is an object comment
+  Zone,
+    ZoneA, ! This is a field comment for the Name field
+    10.0;
+
+  ! A detached comment
+
+  ! Regular object comment
+  Zone,
+    ! A comment placed before the fields is understood as an object comment
+    ZoneB, ! This is a field comment for the Name field
+    20.0;
+
+Zone, ! This is also understood as an object comment
+  ZoneC,
+  30.0;
+
+  ! Another detached comment
+"""
+    idf = IdfFile.loads(idf_text, make_mini_idd(MINI_IDD_ZONE))
+    expected = "\n".join(
+        [
+            "! This is a header",
+            "! with multiple lines",
+            "",
+            "! This is an object comment",
+            "Zone,",
+            "  ZoneA,                   ! This is a field comment for the Name field",
+            "  10.0;                    !- Floor Area {m2}",
+            "",
+            "! A detached comment",
+            "",
+            "! Regular object comment",
+            "! A comment placed before the fields is understood as an object comment",
+            "Zone,",
+            "  ZoneB,                   ! This is a field comment for the Name field",
+            "  20.0;                    !- Floor Area {m2}",
+            "",
+            "! This is also understood as an object comment",
+            "Zone,",
+            "  ZoneC,                   !- Name",
+            "  30.0;                    !- Floor Area {m2}",
+            "",
+            "! Another detached comment",
+            "",
+        ]
+    )
+    assert str(idf) == expected
+
+
 # ---------------------------------------------------------------------------
 # Integration: real IDF serialisation with IDF_LEADING=2
 # ---------------------------------------------------------------------------

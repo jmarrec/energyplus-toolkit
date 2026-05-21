@@ -87,7 +87,7 @@ class IdfFile:
                     # inline / trailing comment — keep it in the object block
                     object_lines.append(raw_line)
                 else:
-                    pending_comment.append(raw_line)
+                    pending_comment.append(line)
                 continue
 
             # ---- object content line ----
@@ -111,6 +111,14 @@ class IdfFile:
         if object_lines:
             LOG.warning("Unterminated object at end of file — attempting to parse anyway")
             self._finish_object(object_lines)
+
+        # flush any trailing comments after the last object
+        if pending_comment:
+            comment_only_idd = self.idd_file.getObject(COMMENT_ONLY_OBJECT_NAME)
+            if comment_only_idd is not None:
+                obj = IdfObject(idd_object=comment_only_idd)
+                obj.comment = "\n".join(pending_comment)
+                self._objects.append(obj)
 
     def _finish_object(self, lines: list[str]) -> None:
         """Parse accumulated lines as one IdfObject and append it."""

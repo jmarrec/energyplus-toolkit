@@ -496,7 +496,6 @@ Zone,
     assert "field comment for the Name field" in obj._fields[0].comment
 
 
-@pytest.mark.xfail(strict=True, reason="inline ! comment on the object-type line not yet stored as object comment")
 def test_idf_object_load_inline_object_type_comment_is_object_comment():
     """A bare ! comment on the same line as the object type is part of the object comment."""
     idd_obj = make_idd_object(ZONE_IDD)
