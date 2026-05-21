@@ -114,11 +114,13 @@ class IdfObject:
             # Any trailing content after the last separator is ignored
             # (shouldn't happen in valid IDF).
 
-            # Associate user comment with the last token added on this line,
-            # but only if it is a field token (index >= 1; index 0 is object type).
+            # Associate user comment with the last token added on this line.
             if user_comment is not None and len(tokens) > tokens_before:
                 last_idx = len(tokens) - 1
-                if last_idx >= 1:
+                if last_idx == 0:
+                    # Comment on the object-type line → treat as object comment.
+                    comment_lines.append(f"! {user_comment}")
+                else:
                     token_comments[last_idx] = user_comment
 
         self.comment = "\n".join(comment_lines)
