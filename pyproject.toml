@@ -1,7 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "energyplus-parser"
+version = "0.0.1"
+description = "A Python parser for EnergyPlus IDD and IDF files."
+authors = [
+    {name = "Julien Marrec", email = "contact@effibem.com"},
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://effibem.com"
+Repository = "https://github.com/jmarrec/energyplus-python-parser"
+Changelog = "https://github.com/jmarrec/energyplus-python-parser/blob/main/CHANGELOG.md"
+Issues = "https://github.com/jmarrec/energyplus-python-parser/issues"
+
+[project.scripts]
+energyplus-parser = "energyplus_parser.cli:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
+dev = [
+    "pre-commit>=4.5.0",
+    "twine>=6.2.0",
+    "bump2version>=1.0.1",
+    "mypy>=1.19.0",
+    "flake8>=7.3.0",
+    "flake8-docstrings>=1.7.0",
+    "black>=25.12.0",
+    "isort>=7.0.0",
+    "tox>=4.32",
+]
+
 [tool.black]
 line-length = 120
 skip-string-normalization = true
-target-version = ['py312']
+target-version = ['py312', 'py313']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -26,5 +78,35 @@ use_parentheses = true
 ensure_newline_before_comments = true
 line_length = 120
 skip_gitignore = true
-# you can skip files as below
-#skip_glob = docs/conf.py
+
+[tool.mypy]
+ignore_missing_imports = false
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = [
+    "energyplus_parser/__main__.py",
+]
+
+[tool.tox]
+isolated_build = true
+requires = ["tox>=4.32"]
+env_list = ["3.13", "3.12", "3.10", "type"]
+
+[tool.tox.env_run_base]
+description = "Run tests under {base_python}"
+extras = ["test"]
+allowlist_externals = ["pytest"]
+commands = [["pytest", "--cov={envsitepackagesdir}/energyplus_parser", "--cov-branch", "--cov-report=xml", "--cov-report=term-missing"]]
+
+[tool.tox.env.type]
+description = "Run type checks on code base"
+extras = ["dev"]
+allowlist_externals = ["mypy"]
+commands = [
+    ["mypy", "energyplus_parser"],
+    ["mypy", "tests"],
+]

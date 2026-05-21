@@ -1,4 +1,4 @@
-from energyplus_parser.constants import BLOCK_INDENT
+from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType, IddKey
 
 
@@ -101,8 +101,8 @@ def test_parse_idd_autosizable_field():
     field_props = field.properties
     assert field_props.type == IddFieldType.RealType
     assert (
-        field_props.note
-        == 'Rated sensible heat ratio (gross sensible capacity/gross total capacity)\nSensible and total capacities do not include effect of supply fan heat'
+        field_props.note == 'Rated sensible heat ratio (gross sensible capacity/gross total capacity)\n'
+        'Sensible and total capacities do not include effect of supply fan heat'
     )
     assert not field_props.required
     assert field_props.autosizable
@@ -133,8 +133,6 @@ def test_parse_idd_extensible_field():
        \type object-list
        \begin-extensible
        \object-list SpaceNames"""
-    text = "".join([x.strip() for x in ori_text.splitlines()])
-
     field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 
     assert field.field_id == "A2"
@@ -263,3 +261,47 @@ def test_parse_idd_numeric_default():
     assert not field_props.externalLists
 
     assert str(field) == ori_text
+
+
+def test_is_name_field_with_references():
+    """A field with \\reference tags (and no \\object-list) is a name field."""
+    field = IddField.load(
+        objectName="Zone",
+        field_lines=r"""  A1 , \field Name
+       \type alpha
+       \reference Zones
+       \reference ZoneNames""".splitlines(),
+    )
+    assert field.is_name_field()
+
+
+def test_is_name_field_literal_name_alpha():
+    """A field literally named 'Name' with alpha type is a name field."""
+    field = IddField.load(
+        objectName="SomeObject",
+        field_lines=r"""  A1 , \field Name
+       \type alpha""".splitlines(),
+    )
+    assert field.is_name_field()
+
+
+def test_is_name_field_with_object_list_not_name():
+    """A field with both \\reference and \\object-list is NOT a name field."""
+    field = IddField.load(
+        objectName="SomeObject",
+        field_lines=r"""  A1 , \field Component Name
+       \type object-list
+       \object-list validBranchEquipmentNames
+       \reference SomeRef""".splitlines(),
+    )
+    assert not field.is_name_field()
+
+
+def test_is_name_field_plain_alpha_not_name():
+    """A plain alpha field that isn't named 'Name' and has no references is not a name field."""
+    field = IddField.load(
+        objectName="SomeObject",
+        field_lines=r"""  A1 , \field Description
+       \type alpha""".splitlines(),
+    )
+    assert not field.is_name_field()

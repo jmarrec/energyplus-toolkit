@@ -1,0 +1,228 @@
+import logging
+from pathlib import Path
+
+from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
+from energyplus_parser.idd.idd_file import IddFile
+from energyplus_parser.idd.idd_object import IddObject
+from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
+
+LOG = logging.getLogger("IdfFile")
+
+
+class IdfFileError(Exception):
+    pass
+
+
+class IdfFile:
+    """An in-memory representation of an EnergyPlus IDF file.
+
+    Backed by an :class:`IddFile` that provides the schema for each object.
+    """
+
+    def __init__(self, idd_file: IddFile) -> None:
+        self.idd_file: IddFile = idd_file
+        self.header: str = ""
+        self._objects: list[IdfObject] = []
+
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def load(cls, path: Path | str, idd_file: IddFile) -> "IdfFile":
+        """Parse an IDF file from *path*."""
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        return cls.loads(text, idd_file)
+
+    @classmethod
+    def loads(cls, text: str, idd_file: IddFile) -> "IdfFile":
+        """Parse an IDF file from a string."""
+        idf = cls(idd_file)
+        idf._parse(text)
+        return idf
+
+    # ------------------------------------------------------------------
+    # Parsing
+    # ------------------------------------------------------------------
+
+    def _parse(self, text: str) -> None:
+        """Populate objects by parsing IDF text.
+
+        Algorithm (mirrors OpenStudio's m_load):
+        - Accumulate comment-only lines.
+        - On a blank line, flush the comment: the very first flush becomes the
+          file header; subsequent flushes are prepended to the next object.
+        - On a non-comment, non-blank line, start accumulating an object block
+          until a line whose data portion ends with ';'.  Then call
+          IdfObject.load() with the accumulated text.
+        """
+        pending_comment: list[str] = []
+        object_lines: list[str] = []
+        in_object = False
+        header_set = False
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+
+            # ---- blank line ----
+            if not line:
+                if not in_object and pending_comment:
+                    comment_text = "\n".join(pending_comment)
+                    if not header_set:
+                        self.header = comment_text
+                        header_set = True
+                        pending_comment = []
+                    else:
+                        comment_only_idd = self.idd_file.getObject(COMMENT_ONLY_OBJECT_NAME)
+                        if comment_only_idd is not None:
+                            obj = IdfObject(idd_object=comment_only_idd)
+                            obj.comment = comment_text
+                            self._objects.append(obj)
+                        pending_comment = []
+                continue
+
+            # ---- comment-only line ----
+            if line.startswith("!"):
+                if in_object:
+                    # inline / trailing comment — keep it in the object block
+                    object_lines.append(raw_line)
+                else:
+                    pending_comment.append(line)
+                continue
+
+            # ---- object content line ----
+            if not in_object:
+                in_object = True
+                header_set = True  # no comment can become the header once an object has started
+                # prepend any accumulated preceding comments
+                object_lines = list(pending_comment) + [raw_line]
+                pending_comment = []
+            else:
+                object_lines.append(raw_line)
+
+            # check for end-of-object (a ';' appears before any inline '!')
+            data_part = line.split("!")[0]
+            if ";" in data_part:
+                self._finish_object(object_lines)
+                object_lines = []
+                in_object = False
+
+        # handle any unterminated object at EOF
+        if object_lines:
+            LOG.warning("Unterminated object at end of file — attempting to parse anyway")
+            self._finish_object(object_lines)
+
+        # flush any trailing comments after the last object
+        if pending_comment:
+            comment_only_idd = self.idd_file.getObject(COMMENT_ONLY_OBJECT_NAME)
+            if comment_only_idd is not None:
+                obj = IdfObject(idd_object=comment_only_idd)
+                obj.comment = "\n".join(pending_comment)
+                self._objects.append(obj)
+
+    def _finish_object(self, lines: list[str]) -> None:
+        """Parse accumulated lines as one IdfObject and append it."""
+        text = "\n".join(lines)
+
+        # peek at the object type (first non-comment token before , or ;)
+        object_type: str | None = None
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("!") or not stripped:
+                continue
+            token = stripped.split("!")[0].split(",")[0].split(";")[0].strip()
+            if token:
+                object_type = token
+                break
+
+        if object_type is None:
+            LOG.warning("Could not determine object type from block — skipping")
+            return
+
+        idd_object: IddObject | None = self.idd_file.getObject(object_type)
+        if idd_object is None:
+            LOG.warning(f"Unknown object type '{object_type}' — skipping")
+            return
+
+        try:
+            obj = IdfObject.load(idd_object=idd_object, text=text)
+            self._objects.append(obj)
+        except IdfObjectError as exc:
+            LOG.error(f"Failed to parse object '{object_type}': {exc} — skipping")
+
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
+
+    @property
+    def objects(self) -> list[IdfObject]:
+        """All objects in the file (in order)."""
+        return list(self._objects)
+
+    def num_objects(self) -> int:
+        return len(self._objects)
+
+    def get_object(self, index: int) -> IdfObject | None:
+        if 0 <= index < len(self._objects):
+            return self._objects[index]
+        return None
+
+    def get_objects_by_type(self, idd_object: IddObject | str) -> list[IdfObject]:
+        """Return all objects whose IDD type matches *idd_object*."""
+        name = idd_object if isinstance(idd_object, str) else idd_object.name
+        return [o for o in self._objects if o.idd_object.name.lower() == name.lower()]
+
+    def get_objects_by_name(self, name: str) -> list[IdfObject]:
+        """Return all objects whose name field equals *name* (case-insensitive)."""
+        return [o for o in self._objects if (o.name or "").lower() == name.lower()]
+
+    def num_objects_of_type(self, idd_object: IddObject | str) -> int:
+        return len(self.get_objects_by_type(idd_object))
+
+    # ------------------------------------------------------------------
+    # Mutators
+    # ------------------------------------------------------------------
+
+    def add_object(self, obj: IdfObject) -> None:
+        self._objects.append(obj)
+
+    def add_objects(self, objs: list[IdfObject]) -> None:
+        for obj in objs:
+            self.add_object(obj)
+
+    def remove_object(self, obj: IdfObject) -> bool:
+        """Remove *obj* by identity.  Returns True if found and removed."""
+        for i, o in enumerate(self._objects):
+            if o is obj:
+                self._objects.pop(i)
+                return True
+        return False
+
+    def remove_objects(self, objs: list[IdfObject]) -> int:
+        """Remove each object in *objs* by identity.  Returns count removed."""
+        return sum(1 for o in objs if self.remove_object(o))
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
+    def __str__(self) -> str:
+        parts: list[str] = []
+        if self.header:
+            parts.append(self.header)
+            parts.append("")
+        for obj in self._objects:
+            parts.append(str(obj))
+        return "\n".join(parts)
+
+    def save(self, path: Path | str, overwrite: bool = False) -> bool:
+        """Write the file to *path*.  Returns True on success."""
+        p = Path(path)
+        if p.exists() and not overwrite:
+            LOG.error(f"File '{p}' already exists and overwrite=False")
+            return False
+        p.write_text(str(self), encoding="utf-8")
+        return True
+
+    def __repr__(self) -> str:
+        return f"IdfFile({len(self._objects)} objects)"

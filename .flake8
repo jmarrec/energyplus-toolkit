@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 120
+ignore =
+    # black-compatible
+    E203,
+    W503,
+    # docstrings not enforced project-wide
+    D,
+    # module-level imports not at top (common in __init__ shims)
+    E402,
+per-file-ignores =
+    # IDD fixture strings contain inherently long EnergyPlus note/memo lines
+    tests/idd/test_idd_file.py: E501
+    tests/idd/test_idd_object.py: E501

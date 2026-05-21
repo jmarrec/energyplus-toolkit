@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from energyplus_parser.constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
+from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
 from energyplus_parser.idd.idd_object import IddObject
 from energyplus_parser.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
 
@@ -15,7 +15,7 @@ class IddFile:
         # The first comment block in an IddFile is its header.
         self.header: str = ""
 
-        self.objects: list[IddObject] = []
+        self.objects: list[IddObject] = [IddObject.load(group="", object_lines=[COMMENT_ONLY_OBJECT_TEXT])]
 
         # Cache for version object
         self._version_object: IddObject | None = None
@@ -37,14 +37,6 @@ class IddFile:
         header_closed = False
         current_group = ""
         object_num = 0
-
-        # Fake a comment-only object
-        comment_only_object = IddObject.load(
-            group=current_group,
-            object_lines=[COMMENT_ONLY_OBJECT_TEXT],
-        )
-        assert comment_only_object.name == COMMENT_ONLY_OBJECT_NAME
-        self.objects.append(comment_only_object)
 
         # Parse the first line as version
         if not lines:
@@ -106,7 +98,7 @@ class IddFile:
                     next_line = lines[line_number].strip()
                     line_number += 1
                     # print(line_number)
-                    if found_closing_line and not next_line.startswith('\\'):  #  RE_METADATA_COMMENT.match(next_line):
+                    if found_closing_line and not next_line.startswith('\\'):  # RE_METADATA_COMMENT.match(next_line):
                         break
                     if next_line:
                         text_lines.append(next_line)
