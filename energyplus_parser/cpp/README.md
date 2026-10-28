@@ -24,7 +24,7 @@ Only IDF blocks are reformatted. Everything else is left untouched.
 
 ## 2. Reformat each IDF block
 
-1. Extract the IDF text (`idf_content`): the content of the quoted strings, or of the raw string.
+1. Extract the IDF text (`idf_content`): the content of the quoted strings, or of the raw string. Like in C++, a string with no `,` after it is joined with the next one (that's how clang-format splits a long string).
 2. Reformat it with `IdfFile`.
 3. Write it back:
    - `delimited_string`: `delimited_string({` and `})` on their own lines, one `"...",` per line, a real blank line between objects. Thanks to the trailing comma on every line, clang-format keeps one string per line. Blocks written differently (first string on the `delimited_string({` line, `{` on the next line, last string on the `})` line) are rewritten that way, with the indentation clang-format would use.
@@ -60,14 +60,19 @@ Values are matched by position, never by text, so identical lines (eg two `"  90
 Notes:
 
 - A comment followed by blank lines moves down, right above the next value.
+- A long inline comment wrapped by clang-format (next line `//`, aligned under it) is one comment: its continuation stays with it.
 - `R"IDF(` blocks can't contain C++ comments: there, `//` is part of the string, which EnergyPlus would reject.
+
+## 4. Don't undo clang-format
+
+clang-format aligns trailing `//` comments, wraps long ones, and splits long strings in adjacent literals. The block is kept as is when the output only differs by that (compared token by token, `_cpp_tokens`), otherwise a pre-commit hook running this then clang-format would never be satisfied.
 
 ## When a block is left unchanged
 
 If a block can't be reformatted safely, it is kept as is and a warning is logged. This happens when:
 
 - the IDF can't be parsed, or an object type isn't in the IDD (`IdfFile` would drop it)
-- a line has text that isn't part of a field, ie after its last `,` / `;` (`IdfFile` would drop it). Eg a value whose `,` is on the next line, or an IDF line split over two C++ strings (`"... !- Name "` `"{dimensionless}",`)
+- a line has text that isn't part of a field, ie after its last `,` / `;` (`IdfFile` would drop it). Eg a value whose `,` is on the next line
 - a line in a `delimited_string` isn't a string, a `//` comment, or blank (eg `std::format(...)`, `"..." + var + "..."`)
 - `R"IDF(` / `)IDF"` aren't on their own lines
 - a raw string is split in several pieces (`)IDF"` followed by `R"IDF(`, to avoid MSVC error C2026)

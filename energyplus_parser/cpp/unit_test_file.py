@@ -20,7 +20,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
@@ -94,12 +94,14 @@ class CppComment:
 
     - Standalone (inline=False): the comment sits on its own line, *before* IDF line ``idf_line_index``.
       ``idf_line_index`` may be equal to the number of IDF lines if the comment is after the last string.
-    - Inline (inline=True): the comment trails the string on IDF line ``idf_line_index``.
+    - Inline (inline=True): the comment trails the string on IDF line ``idf_line_index``. A long one may continue on
+      the next lines, aligned under it, which is how clang-format wraps it: those lines are its ``continuation``.
     """
 
     text: str  # includes the leading '//'
     idf_line_index: int
     inline: bool
+    continuation: list[str] = field(default_factory=list)  # each includes the leading '//'
 
 
 @dataclass(frozen=True)
@@ -292,6 +294,8 @@ class DelimitedStringBlock(PotentialIdfBlock):
         """Extract the IDF content from the quoted lines, concatenating with newlines.
 
         Blank lines (and empty "" strings) become blank IDF lines, as they separate IDF comments from objects.
+        A string with no ',' after it is concatenated with the next one, like C++ does: that's how clang-format splits
+        a long string.
         C++ comments (standalone or inline) are not part of the IDF content, they are recorded in ``cpp_comments``.
         """
         inner_lines = self._inner_lines()
@@ -302,26 +306,39 @@ class DelimitedStringBlock(PotentialIdfBlock):
         idf_lines: list[str] = []
 
         found_string = False
+        continued = False  # the previous string had no ',' after it: the next one is concatenated to it
+        inline_column: int | None = None  # column of the '//' of an inline comment that may continue on the next line
         for line in inner_lines:
             m = CPP_STRING_RE.match(line.rstrip("\n\r"))
             if m:
                 if not found_string:
                     self.indent = m.group(1)[:-1]
                     found_string = True
-                idf_content = m.group(2).strip()
-                idf_lines.append(idf_content)
+                if continued:
+                    idf_lines[-1] += m.group(2)
+                else:
+                    idf_lines.append(m.group(2))
+                continued = "," not in m.group(3)
+                inline_column = None
                 if m.group(4):
                     self.cpp_comments.append(
                         CppComment(text=m.group(4).rstrip(), idf_line_index=len(idf_lines) - 1, inline=True)
                     )
+                    inline_column = m.start(4)
             elif CPP_COMMENT_LINE_RE.match(line):
+                if inline_column is not None and line.index("//") == inline_column:
+                    self.cpp_comments[-1].continuation.append(line.strip())
+                    continue
                 self.cpp_comments.append(CppComment(text=line.strip(), idf_line_index=len(idf_lines), inline=False))
+                inline_column = None
             elif not line.strip():
-                idf_lines.append("")
+                if not continued:
+                    idf_lines.append("")
+                inline_column = None
             else:
                 LOG.warning(f"{self._where()}: unexpected non-string line '{line.strip()}' — leaving unchanged")
                 return None
-        return "\n".join(idf_lines)
+        return "\n".join(line.strip() for line in idf_lines)
 
     def _reformat(self, idd: IddFile) -> str | None:
         assert self.idf_content is not None
@@ -353,7 +370,7 @@ class DelimitedStringBlock(PotentialIdfBlock):
         src_values = _locate_idf_values(self.idf_content.splitlines())
         out_values = {(v.obj, v.index): v for v in _locate_idf_values(formatted)}
         before: dict[int, list[str]] = defaultdict(list)  # formatted line index -> comments placed before it
-        inline: dict[int, list[str]] = defaultdict(list)  # formatted line index -> comments trailing it
+        inline: dict[int, list[CppComment]] = defaultdict(list)  # formatted line index -> comments trailing it
         trailing: list[str] = []
         for c in self.cpp_comments:
             if c.inline:
@@ -362,17 +379,18 @@ class DelimitedStringBlock(PotentialIdfBlock):
                     if (anchor.obj, anchor.index) not in out_values:
                         LOG.warning(f"{self._where()}: could not place C++ comment '{c.text}' — leaving unchanged")
                         return None
-                    inline[out_values[(anchor.obj, anchor.index)].end_line].append(c.text)
+                    inline[out_values[(anchor.obj, anchor.index)].end_line].append(c)
                     continue
             # Standalone (or inline on a line with no IDF value, eg an IDF comment): place before the next value
             anchor = next((v for v in src_values if v.start_line >= c.idf_line_index), None)
+            texts = [c.text, *c.continuation]
             if anchor is None:
-                trailing.append(c.text)
+                trailing.extend(texts)
             elif (anchor.obj, anchor.index) not in out_values:
                 LOG.warning(f"{self._where()}: could not place C++ comment '{c.text}' — leaving unchanged")
                 return None
             else:
-                before[out_values[(anchor.obj, anchor.index)].start_line].append(c.text)
+                before[out_values[(anchor.obj, anchor.index)].start_line].extend(texts)
 
         body: list[str] = []
         for n, idf_line in enumerate(formatted):
@@ -382,11 +400,18 @@ class DelimitedStringBlock(PotentialIdfBlock):
                 continue
             cpp_line = f'{indent}"{idf_line}",'
             if inline[n]:
-                cpp_line += " " + " ".join(inline[n])
+                column = len(cpp_line) + 1  # continuation lines are aligned under the first '//'
+                cpp_line += " " + " ".join(c.text for c in inline[n])
+                cpp_line += "".join(f"{eol}{' ' * column}{text}" for c in inline[n] for text in c.continuation)
             body.append(f"{cpp_line}{eol}")
         body.extend(f"{indent}{text}{eol}" for text in trailing)
 
-        return opener + "".join(body) + closer
+        reformatted = opener + "".join(body) + closer
+        # Don't undo what clang-format does (aligning trailing comments, wrapping long ones, splitting long strings),
+        # or a pre-commit hook running us then clang-format would never be satisfied
+        if _cpp_tokens(reformatted) == _cpp_tokens(self.content):
+            return None
+        return reformatted
 
 
 class RawStringBlock(PotentialIdfBlock):
@@ -490,6 +515,36 @@ def _find_delimited_close(text: str, pos: int) -> int | None:
         else:
             i += 1
     return None
+
+
+_CPP_TOKEN_RE = re.compile(r'(//[^\n]*)|("(?:\\.|[^"\\\n])*")|(\n)|(\S)')
+
+
+def _cpp_tokens(code: str) -> list[tuple[str, str]]:
+    """Tokenize C++ code, ignoring what clang-format changes: whitespace (except line breaks and blank lines), the
+    wrapping of a comment over consecutive lines, and the splitting of a string literal in adjacent ones."""
+    tokens: list[tuple[str, str]] = []
+    newlines = 0
+    for comment, literal, newline, other in _CPP_TOKEN_RE.findall(code):
+        if newline:
+            newlines += 1
+            continue
+        prev_kind = tokens[-1][0] if tokens else None
+        if comment and prev_kind == "comment" and newlines == 1:
+            tokens[-1] = ("comment", f"{tokens[-1][1]} {' '.join(comment[2:].split())}")
+        elif literal and prev_kind == "literal" and newlines <= 1:
+            tokens[-1] = ("literal", tokens[-1][1][:-1] + literal[1:])
+        else:
+            if newlines:
+                tokens.append(("newline", "blank line" if newlines > 1 else ""))
+            if comment:
+                tokens.append(("comment", " ".join(comment[2:].split())))
+            elif literal:
+                tokens.append(("literal", literal))
+            else:
+                tokens.append(("code", other))
+        newlines = 0
+    return tokens
 
 
 def _strip_cpp_comments(code: str) -> str:

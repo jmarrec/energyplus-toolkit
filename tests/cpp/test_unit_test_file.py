@@ -748,7 +748,7 @@ def test_real_world_raw_string_split_for_msvc_in_comment(ep_idd):
 
 
 def test_real_world_idf_line_split_in_two_cpp_strings(ep_idd):
-    """AirflowNetworkHVAC.unit.cc: one IDF line split over two adjacent C++ string literals is left unchanged."""
+    """AirflowNetworkHVAC.unit.cc: an IDF line split over two adjacent C++ strings is one IDF line, as in C++."""
     src = """\
     std::string const idf_objects = delimited_string({
         "  Zone,",
@@ -757,7 +757,16 @@ def test_real_world_idf_line_split_in_two_cpp_strings(ep_idd):
         "    0;",
     });
 """
-    assert UnitTestFile(src).reformat(ep_idd) == src
+    (block,) = delimited_blocks(src)
+    assert block.idf_content == "Zone,\nZ1,                     !- Name {dimensionless}\n0;"
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1,                      !- Name",
+        "  0.0;                     !- Direction of Relative North {deg}",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
 
 
 @pytest.mark.parametrize(
@@ -889,5 +898,149 @@ def test_reformat_non_canonical_nested_in_initializer_list(ep_idd):
          }),
          "Some error message"},
     };
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+# ---------------------------------------------------------------------------
+# clang-format changes must not be undone, or a pre-commit hook running us then clang-format would never be satisfied
+# Inputs are what clang-format-19 gives with EnergyPlus' tst/.clang-format
+# ---------------------------------------------------------------------------
+
+
+def test_wrapped_inline_cpp_comment_is_a_continuation():
+    """EMSManager.unit.cc: clang-format wraps a long inline comment on the next line, aligned under its '//'."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name", // A long comment
+                                              // that was wrapped
+        // A standalone comment
+    });
+"""
+    (block,) = delimited_blocks(src)
+    assert block.cpp_comments == [
+        CppComment(text="// A long comment", idf_line_index=1, inline=True, continuation=["// that was wrapped"]),
+        CppComment(text="// A standalone comment", idf_line_index=2, inline=False),
+    ]
+
+
+def test_reformat_keeps_wrapped_inline_cpp_comment_with_its_line(ep_idd):
+    """ZoneTempPredictorCorrector.unit.cc: the continuation of a wrapped comment stays with it, before a blank line."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "  Zone,Z1;", // This is an error because this object does NOT exist (cause
+                      // of defect)
+        "",
+        "Zone,Z2;",
+    });
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name", // This is an error because this object does NOT exist (cause
+                                              // of defect)
+
+        "Zone,",
+        "  Z2;                      !- Name",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        # StandardRatings.unit.cc: trailing comments aligned
+        """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1,                      !- Name",                       // Short
+        "  90.0;                    !- Direction of Relative North {deg}", // Longer
+    });
+""",
+        # EMSManager.unit.cc: long trailing comment wrapped, at different places
+        """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name", // A long comment that was
+                                              // wrapped by clang-format
+    });
+""",
+        # HVACVariableRefrigerantFlow.unit.cc: long string literal split in adjacent ones
+        """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1,                      !- Name",
+        "  90.0;                    !- Direction of "
+        "Relative North {deg}",
+    });
+""",
+    ],
+    ids=["aligned-comments", "wrapped-comment", "split-literal"],
+)
+def test_reformat_keeps_clang_format_changes(ep_idd, src, caplog):
+    """The block is reformatted (no warning), but the output only differs by what clang-format changes: kept as is."""
+    with caplog.at_level(logging.WARNING, logger="CppParser"):
+        assert UnitTestFile(src).reformat(ep_idd) == src
+    assert not caplog.messages
+
+
+def test_reformat_split_literal_with_idf_change(ep_idd):
+    """HVACVariableRefrigerantFlow.unit.cc: a string split by clang-format is still reformatted when the IDF changes.
+    It's written back on one line, clang-format splits it again."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1,                      !- Name",
+        "  90;                      !- Direction of "
+        "Relative North {deg}",
+    });
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1,                      !- Name",
+        "  90.0;                    !- Direction of Relative North {deg}",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+def test_reformat_empty_string_line_is_not_kept(ep_idd):
+    """A ``"",`` line between objects is a change, not a clang-format one: it's written as a real blank line."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+        "",
+        "Zone,",
+        "  Z2;                      !- Name",
+    });
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+
+        "Zone,",
+        "  Z2;                      !- Name",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+def test_reformat_still_rewrites_line_structure(ep_idd):
+    """Only whitespace is ignored: an already formatted IDF in a non-canonical layout is still rewritten."""
+    src = """\
+    std::string const idf_objects = delimited_string({"Zone,",
+                                                      "  Z1;                      !- Name",
+    });
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    });
 """
     assert UnitTestFile(src).reformat(ep_idd) == expected
