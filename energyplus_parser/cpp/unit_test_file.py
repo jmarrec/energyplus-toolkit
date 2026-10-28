@@ -58,9 +58,10 @@ RAW_OPEN_RE = re.compile(r'R"([^\s(]{0,16})\(')
 # What the C++ scanner has to look at: comments, string/char literals, and block openers
 _CPP_SCAN_RE = re.compile(r'//|/\*|R"|"|\'|delimited_string')
 
-# IDF object-type line heuristic: bare identifier (with optional colons/spaces)
-# followed by ',' or ';'. Rules out error strings like "** Severe **...".
-_IDF_OBJECT_TYPE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9: ]*[,;]')
+# IDF object-type line heuristic: an object type (letters, digits, ':' and '-', no spaces, as in the IDD) followed by
+# ',' or by ';' and nothing else but a '!' comment.
+# Rules out error strings like "** Severe **..." or "DisplayExtraWarnings; for more details."
+_IDF_OBJECT_TYPE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9:-]*\s*(,|;\s*(!.*)?$)')
 
 
 # ---------------------------------------------------------------------------

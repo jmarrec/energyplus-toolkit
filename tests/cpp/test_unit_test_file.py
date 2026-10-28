@@ -228,6 +228,48 @@ def test_delimited_string_error_string_is_not_idf():
     assert ds.is_idf_block() is False
 
 
+def test_delimited_string_error_string_with_semicolon_is_not_idf():
+    """SolarShading.unit.cc: "DisplayExtraWarnings; for more details." looks like an object type followed by ';'."""
+    src = """\
+    std::string const error_string = delimited_string({
+        "   ** Severe  ** Problem in interior solar distribution calculation (CHKBKS)",
+        "   **   ~~~   **    Solar Distribution = FullInteriorExterior will not work in Zone=Zone1",
+        "   **   ~~~   ** because one or more of vertices is in front of receiving surface=Floor",
+        "   **   ~~~   ** (Dot Product indicator=   20.0000)",
+        "   **   ~~~   ** Check surface geometry; if OK, use FullExterior instead. Use Output:Diagnostics,",
+        "DisplayExtraWarnings; for more details.",
+    });
+"""
+    ds = next(b for b in parse(src) if isinstance(b, DelimitedStringBlock))
+    assert ds.is_idf_block() is False
+
+
+@pytest.mark.parametrize("line", ["Some sentence, with a comma", "Note; see the docs", "Value is: 3, not 4"])
+def test_delimited_string_prose_is_not_idf(line):
+    """An object type has no spaces, and after a ';' only a '!' comment can follow."""
+    src = f'auto s = delimited_string({{\n    "{line}",\n}});\n'
+    ds = next(b for b in parse(src) if isinstance(b, DelimitedStringBlock))
+    assert ds.is_idf_block() is False
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Zone,",
+        "  Zone,  ! A comment",
+        "Timestep,4;",
+        "Version,24.1;  !- Version Identifier",
+        "Output:Diagnostics,DisplayExtraWarnings;",
+        "AirTerminal:SingleDuct:VAV:Reheat,",
+        "ShadowCalculation;",
+    ],
+)
+def test_delimited_string_object_type_line_is_idf(line):
+    src = f'auto s = delimited_string({{\n    "{line}",\n}});\n'
+    ds = next(b for b in parse(src) if isinstance(b, DelimitedStringBlock))
+    assert ds.is_idf_block() is True
+
+
 def test_delimited_string_empty_strings_only_is_not_idf():
     src = 'auto s = delimited_string({\n    "",\n    "",\n});\n'
     ds = next(b for b in parse(src) if isinstance(b, DelimitedStringBlock))
