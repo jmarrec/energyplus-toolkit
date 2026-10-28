@@ -356,8 +356,8 @@ class IdfObject:
             if not all_fields:
                 lines.append(f"{indent}{self.idd_object.name};")
             else:
-                # Only None is an empty field: 0 / 0.0 are falsy but must be kept
-                vals = ["" if (v := f.value(return_default=False)) is None else str(v) for f in all_fields]
+                # value_text() is empty only for an empty field: 0 / 0.0 are kept
+                vals = [f.value_text() for f in all_fields]
                 # Trim trailing empty fields
                 while len(vals) > 1 and not vals[-1]:
                     vals.pop()

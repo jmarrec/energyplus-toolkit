@@ -3,6 +3,7 @@ import logging
 import pytest
 
 from energyplus_parser.idd.idd_field import BoundTypes, IddField
+from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_field import ChoiceField, FieldValidationError, IntegerField, NumericMode, RealField
 from tests.assertions import assert_has_method, refute_has_method
 
@@ -279,3 +280,62 @@ def test_idf_integer_field_set_int_rejects_non_integer(value):
     field = IntegerField(idd_field=idd_field)
     with pytest.raises(FieldValidationError, match="Invalid integer"):
         field.setInt(value)
+
+
+# ---------------------------------------------------------------------------
+# Real fields: a number written as an integer can be kept as an integer (idf_constants.IDF_KEEP_INTEGER_REALS)
+# EnergyPlus stores "8" as an int and "8.0" as a double, which matters when the code reads it with getIntFieldValue
+# ---------------------------------------------------------------------------
+
+REAL_IDD = r"""  N1 , \field Some Real
+       \type real"""
+
+
+@pytest.fixture
+def keep_integer_reals(monkeypatch):
+    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [("8", "8"), ("-3", "-3"), ("+2", "2"), ("8.0", "8.0"), ("0.", "0.0"), ("1e3", "1000.0"), ("2.5", "2.5")],
+)
+def test_idf_real_field_keeps_integer_written_as_integer(keep_integer_reals, text, expected):
+    field = RealField(idd_field=IddField.load(objectName="FakeObject", field_lines=REAL_IDD.splitlines()))
+    field.setString(text)
+    assert field.value_text() == expected
+    assert field.text().strip().startswith(expected + ",")
+
+
+@pytest.mark.parametrize("text, expected", [("8", "8.0"), ("8.0", "8.0"), ("2.5", "2.5")])
+def test_idf_real_field_normalizes_integer_by_default(text, expected):
+    field = RealField(idd_field=IddField.load(objectName="FakeObject", field_lines=REAL_IDD.splitlines()))
+    field.setString(text)
+    assert field.value_text() == expected
+
+
+def test_idf_real_field_set_double_is_not_written_as_integer(keep_integer_reals):
+    field = RealField(idd_field=IddField.load(objectName="FakeObject", field_lines=REAL_IDD.splitlines()))
+    field.setString("8")
+    field.setDouble(8.0)
+    assert field.value_text() == "8.0"
+
+
+NUMBER_OF_VERTICES_IDD = r"""  N2 , \field Number of Vertices
+       \autocalculatable
+       \minimum 3
+       \default autocalculate"""
+
+
+def test_idf_real_field_number_of_vertices_keeps_integer_by_default():
+    """Number of Vertices is an integer in practice, but can't be \\type integer as it's \\autocalculatable (EnergyPlus
+    then parses "4.0" as a double, that the integer type rejects): it is always kept as written"""
+    field = RealField(
+        idd_field=IddField.load(objectName="Wall:Detailed", field_lines=NUMBER_OF_VERTICES_IDD.splitlines())
+    )
+    field.setString("4")
+    assert field.value_text() == "4"
+    field.setString("4.0")
+    assert field.value_text() == "4.0"
+    field.setString("autocalculate")
+    assert field.value_text() == "Autocalculate"

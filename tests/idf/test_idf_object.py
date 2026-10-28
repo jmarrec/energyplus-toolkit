@@ -1,6 +1,7 @@
 import pytest
 
 from energyplus_parser.idd.idd_object import IddObject
+from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_field import FieldValidationError, NumericMode
 from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
 
@@ -407,6 +408,13 @@ def test_idf_object_single_line_keeps_zero_in_the_middle():
     idd_obj = make_idd_object(GROUND_TEMPERATURE_IDD)
     obj = IdfObject.load(idd_object=idd_obj, text="Site:GroundTemperature:BuildingSurface,0,0,19.5;")
     assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0.0,0.0,19.5;"
+
+
+def test_idf_object_single_line_keeps_integer_reals(monkeypatch):
+    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+    idd_obj = make_idd_object(GROUND_TEMPERATURE_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text="Site:GroundTemperature:BuildingSurface,0,18.0,19.5;")
+    assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0,18.0,19.5;"
 
 
 def test_idf_object_single_line_still_trims_trailing_empty_fields():

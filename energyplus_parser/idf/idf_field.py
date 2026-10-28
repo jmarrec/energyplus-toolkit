@@ -1,9 +1,11 @@
 import logging
+import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
 
 from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
+from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_constants import format_idf_field
 
 LOG = logging.getLogger("IdfField")
@@ -84,11 +86,14 @@ class IdfField(ABC):
             raise FieldValidationError("Cannot reset a required field with no default value")
         self._value = None
 
-    def text(self, is_last_field: bool = False) -> str:
+    def value_text(self) -> str:
+        """The value as written in the IDF ("" if the field is empty)."""
         v = self.value(return_default=False)
-        val = str(v) if v is not None else ""
+        return "" if v is None else str(v)
+
+    def text(self, is_last_field: bool = False) -> str:
         return format_idf_field(
-            value=val,
+            value=self.value_text(),
             is_last_field=is_last_field,
             field_name=self.idd_field.name,
             comment=self.comment,
@@ -295,6 +300,11 @@ class RealField(NumericField):
     def __init__(self, idd_field: IddField) -> None:
         super().__init__(idd_field=idd_field)
         self._value: float | None = None
+        self._written_as_integer = False  # set by setString, see idf_constants.IDF_KEEP_INTEGER_REALS
+
+    def setString(self, value: str):
+        super().setString(value)
+        self._written_as_integer = self._value is not None and re.fullmatch(r"[+-]?\d+", value.strip()) is not None
 
     def setDouble(self, value: float) -> None:
         if not isinstance(value, (float, int)):
@@ -303,6 +313,17 @@ class RealField(NumericField):
         self._validate_range(value=v)
         self._value = v
         self._mode = NumericMode.NORMAL
+        self._written_as_integer = False
+
+    def value_text(self) -> str:
+        v = self.value(return_default=False)
+        keep_integer = (
+            idf_constants.IDF_KEEP_INTEGER_REALS
+            or self.idd_field.name.lower() in idf_constants.IDF_KEEP_INTEGER_REALS_FIELDS
+        )
+        if keep_integer and self._written_as_integer and isinstance(v, float):
+            return str(int(v))
+        return super().value_text()
 
     @classmethod
     def _parse_number(cls, value: str) -> float:
