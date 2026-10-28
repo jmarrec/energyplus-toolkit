@@ -293,21 +293,23 @@ class IddField:
                 not_handled = False
         # === m ===
         elif index == 'm':
-            if lower_text.startswith(tag := "minimum>"):
-                self.properties.minBoundType = BoundTypes.ExclusiveBound
-                self.properties.minBoundValue = float(text[len(tag) :].split('!')[0].strip())
-                not_handled = False
-            elif lower_text.startswith(tag := "minimum"):
-                self.properties.minBoundType = BoundTypes.InclusiveBound
-                self.properties.minBoundValue = float(text[len(tag) :].split('!')[0].strip())
-                not_handled = False
-            elif lower_text.startswith(tag := "maximum<"):
-                self.properties.maxBoundType = BoundTypes.ExclusiveBound
-                self.properties.maxBoundValue = float(text[len(tag) :].split('!')[0].strip())
+            if lower_text.startswith(tag := "minimum"):
+                rest = text[len(tag) :].split('!')[0].strip()
+                if rest.startswith('>'):
+                    self.properties.minBoundType = BoundTypes.ExclusiveBound
+                    rest = rest[1:].strip()
+                else:
+                    self.properties.minBoundType = BoundTypes.InclusiveBound
+                self.properties.minBoundValue = float(rest)
                 not_handled = False
             elif lower_text.startswith(tag := "maximum"):
-                self.properties.maxBoundType = BoundTypes.InclusiveBound
-                self.properties.maxBoundValue = float(text[len(tag) :].split('!')[0].strip())
+                rest = text[len(tag) :].split('!')[0].strip()
+                if rest.startswith('<'):
+                    self.properties.maxBoundType = BoundTypes.ExclusiveBound
+                    rest = rest[1:].strip()
+                else:
+                    self.properties.maxBoundType = BoundTypes.InclusiveBound
+                self.properties.maxBoundValue = float(rest)
                 not_handled = False
 
             elif lower_text.startswith("memo"):
