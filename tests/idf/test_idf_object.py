@@ -356,6 +356,66 @@ def test_idf_object_set_int_wrong_type():
 
 
 # ---------------------------------------------------------------------------
+# singleLine format: zero values must be kept (0 is falsy, but it's not an empty field)
+# ---------------------------------------------------------------------------
+
+SCHEDULE_CONSTANT_IDD = """\
+Schedule:Constant,
+   \\memo Constant hourly value for entire year.
+   \\format singleLine
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+       \\reference ScheduleNames
+  A2 , \\field Schedule Type Limits Name
+       \\type object-list
+       \\object-list ScheduleTypeLimitsNames
+  N1 ; \\field Hourly Value
+       \\type real
+       \\default 0
+"""
+
+# Shortened to 3 months
+GROUND_TEMPERATURE_IDD = """\
+Site:GroundTemperature:BuildingSurface,
+       \\unique-object
+       \\format singleLine
+  N1 , \\field January Ground Temperature
+       \\units C
+       \\type real
+       \\default 18
+  N2 , \\field February Ground Temperature
+       \\units C
+       \\type real
+       \\default 18
+  N3 ; \\field March Ground Temperature
+       \\units C
+       \\type real
+       \\default 18
+"""
+
+
+@pytest.mark.parametrize("value", ["0", "0.0"])
+def test_idf_object_single_line_keeps_trailing_zero(value):
+    idd_obj = make_idd_object(SCHEDULE_CONSTANT_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text=f"Schedule:Constant,Always Off,,{value};")
+    assert str(obj).strip() == "Schedule:Constant,Always Off,,0.0;"
+
+
+def test_idf_object_single_line_keeps_zero_in_the_middle():
+    """A zero that isn't the default (18 here) must not become an empty field, which would mean 18."""
+    idd_obj = make_idd_object(GROUND_TEMPERATURE_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text="Site:GroundTemperature:BuildingSurface,0,0,19.5;")
+    assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0.0,0.0,19.5;"
+
+
+def test_idf_object_single_line_still_trims_trailing_empty_fields():
+    idd_obj = make_idd_object(SCHEDULE_CONSTANT_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text="Schedule:Constant,Always Off,,;")
+    assert str(obj).strip() == "Schedule:Constant,Always Off;"
+
+
+# ---------------------------------------------------------------------------
 # Parsing from IDF text
 # ---------------------------------------------------------------------------
 
