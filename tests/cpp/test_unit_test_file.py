@@ -58,10 +58,11 @@ int main() {
     assert blocks[1].content == """delimited_string({
         "Zone,",
         "  Z1;",
-    });"""
+    })"""
 
+    # The block ends at the '})' matching 'delimited_string({': what follows is part of the surrounding statement
     assert isinstance(blocks[2], RegularCodeBlock)
-    assert blocks[2].content == """
+    assert blocks[2].content == """;
 }
 """
 
@@ -256,11 +257,12 @@ def test_raw_string_empty_delimiter_is_not_idf_block():
     assert rs.is_idf_block() is False
 
 
-def test_single_line_raw_string_is_regular_code():
-    """A single-line raw string is not split into a RawStringBlock."""
-    src = 'std::string idf_objects = R"xxx(content)xxx"; // blablabla\n'
-    blocks = parse(src)
-    assert all(isinstance(b, RegularCodeBlock) for b in blocks)
+def test_single_line_raw_string(ep_idd):
+    """A single-line raw string is a RawStringBlock, but is never reformatted."""
+    for src in ['std::string s = R"xxx(content)xxx"; // blablabla\n', 'std::string s = R"IDF(Zone,Z1;)IDF";\n']:
+        blocks = parse(src)
+        assert [type(b) for b in blocks] == [RegularCodeBlock, RawStringBlock, RegularCodeBlock]
+        assert UnitTestFile(src).reformat(ep_idd) == src
 
 
 def test_blocks_cover_whole_file_raw_string_with_prefix():
@@ -545,7 +547,6 @@ def delimited_blocks(text: str) -> list[DelimitedStringBlock]:
     return [b for b in parse(text) if isinstance(b, DelimitedStringBlock)]
 
 
-@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
 def test_real_world_closer_double_paren(ep_idd):
     """IdfParser.unit.cc: ``test_object(delimited_string({ ... }));``"""
     src = """\
@@ -574,7 +575,6 @@ def test_real_world_closer_double_paren(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == expected
 
 
-@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
 def test_real_world_closer_process_idf(ep_idd):
     """``ASSERT_TRUE(process_idf(delimited_string({ ... })));``"""
     src = """\
@@ -593,7 +593,6 @@ def test_real_world_closer_process_idf(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == expected
 
 
-@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
 def test_real_world_closer_comma(ep_idd):
     """CurveManager.unit.cc: ``{delimited_string({ ... }), "message"}`` in an initializer list."""
     src = """\
@@ -618,7 +617,6 @@ def test_real_world_closer_comma(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == expected
 
 
-@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
 def test_real_world_non_idf_block_does_not_swallow_next_block(ep_idd):
     """EvaporativeFluidCoolers.unit.cc: an error string closing with ``})));`` must not run into the next block."""
     src = """\
@@ -648,7 +646,6 @@ def test_real_world_non_idf_block_does_not_swallow_next_block(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == expected
 
 
-@pytest.mark.xfail(strict=True, reason='delimited_string( inside a // comment is taken as a block opener')
 def test_real_world_opener_in_cpp_comment(ep_idd):
     """DXCoils.unit.cc: a commented-out ``// EXPECT_TRUE( compare_eio_stream( delimited_string( {`` is not a block."""
     src = """\
@@ -675,9 +672,6 @@ def test_real_world_opener_in_cpp_comment(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == expected
 
 
-@pytest.mark.xfail(
-    strict=True, reason='raw string ends at the first )IDF" but the parser requires )IDF";, so pieces get merged'
-)
 def test_real_world_raw_string_split_for_msvc(ep_idd):
     """UnitarySystem.unit.cc: raw strings split in pieces for MSVC C2026 (string too long) must be left unchanged.
 
@@ -695,9 +689,6 @@ def test_real_world_raw_string_split_for_msvc(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == src
 
 
-@pytest.mark.xfail(
-    strict=True, reason='raw string ends at the first )IDF" but the parser requires )IDF";, so pieces get merged'
-)
 def test_real_world_raw_string_split_for_msvc_in_comment(ep_idd):
     """UnitarySystem.unit.cc: same, with the split hidden at the end of a ``!-`` comment.
 
@@ -714,7 +705,6 @@ def test_real_world_raw_string_split_for_msvc_in_comment(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == src
 
 
-@pytest.mark.xfail(strict=True, reason='adjacent C++ string literals are read as two IDF lines, and IdfFile drops one')
 def test_real_world_idf_line_split_in_two_cpp_strings(ep_idd):
     """AirflowNetworkHVAC.unit.cc: one IDF line split over two adjacent C++ string literals is left unchanged."""
     src = """\
@@ -746,7 +736,6 @@ def test_real_world_idf_line_split_in_two_cpp_strings(ep_idd):
     ],
     ids=["raw-string", "delimited-string"],
 )
-@pytest.mark.xfail(strict=True, reason="IdfFile silently drops text after the last ',' or ';' of a line")
 def test_real_world_text_dropped_by_idf_file_leaves_block_unchanged(ep_idd, caplog, src):
     """Text that IdfFile would silently drop (after the last ',' or ';' of a line) must not be lost."""
     with caplog.at_level(logging.WARNING, logger="CppParser"):
@@ -754,7 +743,6 @@ def test_real_world_text_dropped_by_idf_file_leaves_block_unchanged(ep_idd, capl
     assert caplog.messages
 
 
-@pytest.mark.xfail(strict=True, reason='block line numbers drift by one after each block')
 def test_real_world_block_line_numbers():
     """Block start/end are the 0-based line numbers in the file, even after other blocks."""
     src = """\

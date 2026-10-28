@@ -12,6 +12,8 @@ Everything is in `unit_test_file.py`.
 
 `UnitTestFile` cuts the file into consecutive blocks. Joining them back gives the original file, character for character.
 
+It scans the file like a C++ compiler would: comments and string literals are skipped, so a `delimited_string({` in a `// comment` is not a block. A `delimited_string` block ends at the `})` matching its `({` (whatever follows, `);`, `));` or `, true));`, is regular code). A raw string ends at the first `)IDF"`.
+
 | Block                  | What                                    | Is IDF if…                                      |
 |------------------------|-----------------------------------------|-------------------------------------------------|
 | `RegularCodeBlock`     | Any other C++ code                      | never                                           |
@@ -62,11 +64,13 @@ Notes:
 
 ## When a block is left unchanged
 
-Nothing is ever lost: if a block can't be reformatted safely, it is kept as is and a warning is logged. This happens when:
+If a block can't be reformatted safely, it is kept as is and a warning is logged. This happens when:
 
-- an object type isn't in the IDD (`IdfFile` would drop it)
-- a line in a `delimited_string` isn't a string, a `//` comment, or blank
-- `delimited_string({` / `});` or `R"IDF(` / `)IDF"` aren't on their own lines
+- the IDF can't be parsed, or an object type isn't in the IDD (`IdfFile` would drop it)
+- a line has text that isn't part of a field, ie after its last `,` / `;` (`IdfFile` would drop it). Eg a value whose `,` is on the next line, or an IDF line split over two C++ strings (`"... !- Name "` `"{dimensionless}",`)
+- a line in a `delimited_string` isn't a string, a `//` comment, or blank (eg `std::format(...)`, `"..." + var + "..."`)
+- `delimited_string({` / `})` or `R"IDF(` / `)IDF"` aren't on their own lines
+- a raw string is split in several pieces (`)IDF"` followed by `R"IDF(`, to avoid MSVC error C2026)
 - the IDF contains `"` or `\` (would need C++ escaping)
 - a comment's value can't be found after reformatting
 

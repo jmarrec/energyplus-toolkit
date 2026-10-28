@@ -45,22 +45,18 @@ CPP_STRING_RE = re.compile(r'^(\s*")(.*?)("[\s,]*)(?:\s*(//.*))?$')
 # Matches a standalone C++ comment line (// ...).
 CPP_COMMENT_LINE_RE = re.compile(r'^\s*//')
 
-# Detects delimited_string({ anywhere on a line.
+# Matches delimited_string({ (the block ends at the matching '})').
 DELIMITED_OPEN_RE = re.compile(r'delimited_string\s*\(\s*\{')
-
-# Matches the closing });  of a delimited_string block.
-DELIMITED_CLOSE_RE = re.compile(r'\}\s*\)\s*;')
 
 # Raw string literals: https://en.cppreference.com/cpp/language/string_literal
 # R"d-char-seq(r-char-seq)d-char-seq"
 # d-char-seq: up to 16 chars, no whitespace or '('
-# Captures the d-char-seq in group 1.
+# Captures the d-char-seq in group 1. The raw string ends at the first )d-char-seq".
 # TODO: warn if d-char-seq isn't "IDF" but content looks like IDF, or vice versa.
 RAW_OPEN_RE = re.compile(r'R"([^\s(]{0,16})\(')
 
-# Matches the closing )d-char-seq" of a raw string literal (possibly with trailing ;).
-# Captures the d-char-seq in group 1.
-RAW_CLOSE_RE = re.compile(r'\)([^\s)]{0,16})"\s*;')
+# What the C++ scanner has to look at: comments, string/char literals, and block openers
+_CPP_SCAN_RE = re.compile(r'//|/\*|R"|"|\'|delimited_string')
 
 # IDF object-type line heuristic: bare identifier (with optional colons/spaces)
 # followed by ',' or ';'. Rules out error strings like "** Severe **...".
@@ -152,6 +148,12 @@ def _format_idf(idf_text: str, idd: IddFile, where: str) -> list[str] | None:
     expected_count = _count_idf_objects(idf_text)
     if expected_count == 0:
         return None
+    for line in idf_text.splitlines():
+        # IdfFile only keeps what's before a ',' or ';' (and '!' comments): anything else would be silently lost
+        data = line.split("!", 1)[0]
+        if data[max(data.rfind(","), data.rfind(";")) + 1 :].strip():
+            LOG.warning(f"{where}: text outside of an IDF field would be lost ({line.strip()!r}) — leaving unchanged")
+            return None
     try:
         idf = IdfFile.loads(idf_text, idd)
     except Exception as exc:
@@ -242,7 +244,7 @@ class PotentialIdfBlock(Block, ABC):
 
 
 class DelimitedStringBlock(PotentialIdfBlock):
-    """A ``delimited_string({ ... });`` block."""
+    """A ``delimited_string({ ... })`` block."""
 
     def __init__(self, content: str, start: int, end: int) -> None:
         # set before super().__init__ calls _parse_idf_content
@@ -270,14 +272,14 @@ class DelimitedStringBlock(PotentialIdfBlock):
         C++ comments (standalone or inline) are not part of the IDF content, they are recorded in ``cpp_comments``.
         """
         m_open = DELIMITED_OPEN_RE.match(self.content)
-        m_close = DELIMITED_CLOSE_RE.search(self.content)
-        if m_open is None or m_close is None:
+        close_idx = self.content.rfind("}")
+        if m_open is None or close_idx < m_open.end():
             LOG.warning(f"{self._where()}: malformed delimited_string block — leaving unchanged")
             return None
 
         idf_lines: list[str] = []
-        inner_lines = self.content[m_open.end() : m_close.start()].splitlines()
-        # Drop what's left of the 'delimited_string({' line and the indentation before '});', when blank
+        inner_lines = self.content[m_open.end() : close_idx].splitlines()
+        # Drop what's left of the 'delimited_string({' line and the indentation before '})', when blank
         if inner_lines and not inner_lines[0].strip():
             inner_lines.pop(0)
         if inner_lines and not inner_lines[-1].strip():
@@ -308,8 +310,12 @@ class DelimitedStringBlock(PotentialIdfBlock):
     def _reformat(self, idd: IddFile) -> str | None:
         assert self.idf_content is not None
         lines = self.content.splitlines(keepends=True)
-        # Only handle the canonical layout, with delimited_string({ and }); on their own lines
-        if len(lines) < 2 or not DELIMITED_OPEN_RE.fullmatch(lines[0].strip()) or lines[-1].strip() != "});":
+        # Only handle the canonical layout, with delimited_string({ ending its line and }) on its own line
+        if (
+            len(lines) < 2
+            or not DELIMITED_OPEN_RE.fullmatch(lines[0].strip())
+            or re.fullmatch(r"\}\s*\)", lines[-1].strip()) is None
+        ):
             return None
         if '"' in self.idf_content or "\\" in self.idf_content:
             return None  # would need C++ escaping
@@ -364,6 +370,9 @@ class RawStringBlock(PotentialIdfBlock):
 
     def __init__(self, content: str, start: int, end: int, delimiter: str) -> None:
         self.delimiter = delimiter  # set before super().__init__ calls _detect_idf
+        # Set by UnitTestFile when this is one piece of adjacent raw strings ("R"IDF(...)IDF" R"IDF(...)IDF""), which
+        # is how long strings are split to avoid MSVC error C2026 (string too big). Those are never reformatted.
+        self.concatenated = False
         super().__init__(content, start, end)
 
     def _detect_idf(self) -> bool:
@@ -387,9 +396,12 @@ class RawStringBlock(PotentialIdfBlock):
     def _reformat(self, idd: IddFile) -> str | None:
         """Reformat the IDF flush left, with a blank line after R"IDF( and before the (untouched) )IDF" line."""
         assert self.idf_content is not None
+        if self.concatenated:
+            LOG.warning(f"{self._where()}: raw string split in several pieces (MSVC C2026) — leaving unchanged")
+            return None
         lines = self.content.splitlines(keepends=True)
-        # Only handle the canonical layout, with R"IDF( ending its line and )IDF" starting its line
-        if len(lines) < 2 or lines[0].strip() != f'R"{self.delimiter}(' or not lines[-1].lstrip().startswith(")"):
+        # Only handle the canonical layout, with R"IDF( ending its line and )IDF" on its own line
+        if len(lines) < 2 or lines[0].strip() != f'R"{self.delimiter}(' or lines[-1].strip() != f'){self.delimiter}"':
             return None
         eol = "\r\n" if lines[0].endswith("\r\n") else "\n"
 
@@ -399,6 +411,65 @@ class RawStringBlock(PotentialIdfBlock):
 
         body = "".join(f"{line}{eol}" if line else eol for line in formatted)
         return f"{lines[0]}{eol}{body}{eol}{lines[-1]}"
+
+
+# ---------------------------------------------------------------------------
+# C++ scanning helpers
+# ---------------------------------------------------------------------------
+
+
+def _skip_quoted(text: str, pos: int) -> int:
+    """Return the position after the string or char literal starting at ``pos`` (``"`` or ``'``)."""
+    quote = text[pos]
+    if quote == "'" and pos > 0 and text[pos - 1].isalnum():
+        return pos + 1  # digit separator, eg 1'000'000
+    i = pos + 1
+    while i < len(text):
+        c = text[i]
+        if c == "\\":
+            i += 2
+        elif c == quote:
+            return i + 1
+        elif c == "\n":
+            return i  # unterminated
+        else:
+            i += 1
+    return i
+
+
+def _find_delimited_close(text: str, pos: int) -> int | None:
+    """Return the position after the ``})`` closing a ``delimited_string({`` whose ``{`` ends at ``pos``.
+
+    Skips string literals and comments. Returns None if there's no matching ``})``.
+    """
+    depth = 0
+    i = pos
+    while i < len(text):
+        if text.startswith("//", i):
+            newline = text.find("\n", i)
+            i = len(text) if newline == -1 else newline
+        elif text.startswith("/*", i):
+            close = text.find("*/", i + 2)
+            i = len(text) if close == -1 else close + 2
+        elif text[i] in "\"'":
+            i = _skip_quoted(text, i)
+        elif text[i] == "{":
+            depth += 1
+            i += 1
+        elif text[i] == "}":
+            if depth > 0:
+                depth -= 1
+                i += 1
+                continue
+            m = re.compile(r"\}\s*\)").match(text, i)
+            return None if m is None else m.end()
+        else:
+            i += 1
+    return None
+
+
+def _strip_cpp_comments(code: str) -> str:
+    return re.sub(r"//[^\n]*|/\*.*?\*/", "", code, flags=re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
@@ -430,129 +501,83 @@ class UnitTestFile:
         return "".join(b.reformat(idd) for b in self._blocks)
 
     def _parse(self) -> None:
-        lines = self.content.splitlines(keepends=True)
-        n = len(lines)
-        i = 0
+        """Split the file into blocks, scanning it like a C++ lexer would.
+
+        Comments and string literals are skipped, so a ``delimited_string({`` inside a ``// comment`` or a ``})`` inside
+        a string isn't taken for a block boundary.
+        """
+        text = self.content
         regular_start = 0
-
-        def flush_regular(up_to: int) -> None:
-            if up_to > regular_start:
-                self._blocks.append(
-                    RegularCodeBlock(
-                        content="".join(lines[regular_start:up_to]),
-                        start=regular_start,
-                        end=up_to - 1,
-                    )
-                )
-
-        while i < n:
-            stripped = lines[i].rstrip("\n\r")
-
-            # ---- delimited_string({ ----
-            if m_ds := DELIMITED_OPEN_RE.search(stripped):
-                open_prefix = lines[i][: m_ds.start()]
-                open_suffix = lines[i][m_ds.start() :]  # from delimited_string({ onward
-
-                if open_prefix:
-                    self._blocks.append(
-                        RegularCodeBlock(
-                            content="".join(lines[regular_start:i]) + open_prefix,
-                            start=regular_start,
-                            end=i,
-                        )
-                    )
-                else:
-                    flush_regular(i)
-
-                j = i + 1
-                raw_parts = [open_suffix]
-                close_suffix = ""
-                while j < n:
-                    if m_close := DELIMITED_CLOSE_RE.search(lines[j]):
-                        raw_parts.append(lines[j][: m_close.end()])
-                        close_suffix = lines[j][m_close.end() :]
-                        j += 1
-                        break
-                    raw_parts.append(lines[j])
-                    j += 1
-                self._blocks.append(
-                    DelimitedStringBlock(
-                        content="".join(raw_parts),
-                        start=i,
-                        end=j - 1,
-                    )
-                )
-                i = j
-                regular_start = i
-                if close_suffix:
-                    lines.insert(i, close_suffix)
-                    n = len(lines)
-                continue
-
-            # ---- R"delimiter( ----
-            m = RAW_OPEN_RE.search(stripped)
-            if m:
-                delimiter = m.group(1)
-                close_re = re.compile(r'\)' + re.escape(delimiter) + r'"\s*;')
-
-                # Single-line raw string: open and close on the same line.
-                # Not reformattable; let it fall through as regular code.
-                if close_re.search(stripped[m.end() :]):
-                    i += 1
+        pos = 0
+        while (m := _CPP_SCAN_RE.search(text, pos)) is not None:
+            token, pos = m.group(), m.start()
+            if token == "//":
+                newline = text.find("\n", pos)
+                pos = len(text) if newline == -1 else newline
+            elif token == "/*":
+                close = text.find("*/", pos + 2)
+                pos = len(text) if close == -1 else close + 2
+            elif token == '"' or token == "'":
+                pos = _skip_quoted(text, pos)
+            elif token == 'R"':
+                m_raw = RAW_OPEN_RE.match(text, pos)
+                close = -1 if m_raw is None else text.find(f'){m_raw.group(1)}"', m_raw.end())
+                if m_raw is None or close == -1:
+                    pos = _skip_quoted(text, pos + 1)  # not a valid raw string: treat as a regular string
                     continue
-
-                # Multi-line raw string.
-                # Split the opening line: prefix before R"del( → regular code,
-                # the rest (from R"del( onward) → start of raw string content.
-                open_prefix = lines[i][: m.start()]
-                open_suffix = lines[i][m.start() :]  # includes trailing \n
-
-                if open_prefix:
-                    self._blocks.append(
-                        RegularCodeBlock(
-                            content="".join(lines[regular_start:i]) + open_prefix,
-                            start=regular_start,
-                            end=i,
-                        )
-                    )
-                else:
-                    flush_regular(i)
-
-                # Collect inner lines + closing line.
-                raw_parts = [open_suffix]
-                j = i + 1
-                close_suffix = ""
-                while j < n:
-                    m_close = close_re.search(lines[j].rstrip("\n\r"))
-                    if m_close:
-                        # Everything up to and including the close marker stays in the block.
-                        close_suffix = lines[j][m_close.end() :]
-                        raw_parts.append(lines[j][: m_close.end()])
-                        j += 1
-                        break
-                    raw_parts.append(lines[j])
-                    j += 1
-
+                end = close + len(m_raw.group(1)) + 2
+                self._add_regular(regular_start, pos)
                 self._blocks.append(
                     RawStringBlock(
-                        content="".join(raw_parts),
-                        start=i,
-                        end=j - 1,
-                        delimiter=delimiter,
+                        content=text[pos:end],
+                        start=self._line(pos),
+                        end=self._line(end - 1),
+                        delimiter=m_raw.group(1),
                     )
                 )
-                i = j
-                regular_start = i
-                # Suffix after the closing marker (e.g. " // comment\n") becomes
-                # the start of the next regular block.
-                if close_suffix:
-                    lines.insert(i, close_suffix)
-                    n = len(lines)
+                regular_start = pos = end
+            else:  # delimited_string
+                m_open = DELIMITED_OPEN_RE.match(text, pos)
+                is_identifier = pos == 0 or not (text[pos - 1].isalnum() or text[pos - 1] == "_")
+                close_end = _find_delimited_close(text, m_open.end()) if m_open is not None and is_identifier else None
+                if close_end is None:
+                    pos += len(token)
+                    continue
+                self._add_regular(regular_start, pos)
+                self._blocks.append(
+                    DelimitedStringBlock(
+                        content=text[pos:close_end],
+                        start=self._line(pos),
+                        end=self._line(close_end - 1),
+                    )
+                )
+                regular_start = pos = close_end
+        self._add_regular(regular_start, len(text))
+        self._mark_concatenated_raw_strings()
+
+    def _line(self, pos: int) -> int:
+        """0-based line number of character ``pos``."""
+        return self.content.count("\n", 0, pos)
+
+    def _add_regular(self, start: int, end: int) -> None:
+        if end > start:
+            self._blocks.append(
+                RegularCodeBlock(content=self.content[start:end], start=self._line(start), end=self._line(end - 1))
+            )
+
+    def _mark_concatenated_raw_strings(self) -> None:
+        """Mark raw strings separated only by whitespace or comments: they are pieces of the same C++ string."""
+        for i, block in enumerate(self._blocks):
+            if not isinstance(block, RawStringBlock):
                 continue
-
-            i += 1
-
-        flush_regular(n)
+            between = self._blocks[i + 1] if i + 1 < len(self._blocks) else None
+            following = self._blocks[i + 2] if i + 2 < len(self._blocks) else None
+            if (
+                isinstance(between, RegularCodeBlock)
+                and isinstance(following, RawStringBlock)
+                and not _strip_cpp_comments(between.content).strip()
+            ):
+                block.concatenated = following.concatenated = True
 
     def __repr__(self) -> str:
         return f"UnitTestFile with {len(self._blocks)} blocks:\n" + "\n".join(f"  {b!r}" for b in self._blocks)
