@@ -32,7 +32,9 @@ class IdfField(ABC):
 
     @property
     def required(self):
-        return self.idd_field.properties.required
+        # A field with a default can be left blank, even if the IDD says it's \required-field
+        props = self.idd_field.properties
+        return props.required and not props.stringDefault
 
     @staticmethod
     def from_idd_field(idd_field) -> "IdfField":

@@ -349,3 +349,22 @@ def test_is_name_field_plain_alpha_not_name():
        \type alpha""".splitlines(),
     )
     assert not field.is_name_field()
+
+
+def test_parse_idd_required_field():
+    """\\required-field must be read, and written back (it was set on the field instead of its properties)."""
+    ori_text = r"""  A1 , \field Zone Terminal Unit Name
+       \required-field
+       \type alpha
+       \reference ZoneTerminalUnitNames"""
+    field = IddField.load(objectName="ZoneHVAC:TerminalUnit:VariableRefrigerantFlow", field_lines=ori_text.splitlines())
+    assert field.properties.required
+    # Written back in the formatter's property order (\type first)
+    assert str(field) == "\n".join(
+        [
+            r"  A1 , \field Zone Terminal Unit Name",
+            r"       \type alpha",
+            r"       \required-field",
+            r"       \reference ZoneTerminalUnitNames",
+        ]
+    )

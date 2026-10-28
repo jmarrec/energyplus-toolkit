@@ -334,7 +334,7 @@ class IddField:
         # === r ===
         elif index == 'r':
             if lower_text.startswith("required-field"):
-                self.required = True
+                self.properties.required = True
                 not_handled = False
             elif lower_text.startswith(tag := "reference-class-name"):
                 reference = text[len(tag) :].split('!')[0].strip()
@@ -457,14 +457,6 @@ class IddField:
 
         if self.properties.type == IddFieldType.UnknownType:
             raise IddFieldParseError(f"Field is of unknown type after parsing: '{self.name}'")
-
-        # If a field has a default value, it's not required
-        if self.properties.stringDefault and self.properties.required:
-            LOG.info(
-                f"Field '{self.name}' of object '{self.objectName}' "
-                f"is both required and has default value — setting required=False."
-            )
-            self.properties.required = False
 
     def is_name_field(self) -> bool:
         """Return True if this field represents the name of the object.

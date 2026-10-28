@@ -601,3 +601,20 @@ def test_parse_idd_object_obsolete(obsolete_line, replacement) -> None:
     assert idd_obj.properties.obsolete
     assert idd_obj.properties.obsolete_replacement == replacement
     assert f"       {obsolete_line}\n" in str(idd_obj)
+
+
+def test_required_field_with_default_stays_required_in_idd() -> None:
+    """SurfaceProperty:SurroundingSurfaces 'Surrounding Surface View Factor' is \\required-field with a \\default:
+    the IDD must keep it required (it's the IDF side that treats a default as making it optional)."""
+    ori_text = r"""Some:Object,
+  A1 , \field Name
+       \required-field
+       \type alpha
+  N1 ; \field View Factor
+       \required-field
+       \type real
+       \default 0.5
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    assert idd_obj.fields[1].properties.required
+    assert str(idd_obj).count("\\required-field") == 2
