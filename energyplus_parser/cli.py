@@ -1,259 +1,144 @@
-"""Command-line interface for the EnergyPlus IDF/IDD parser."""
+"""Command-line interface for the EnergyPlus IDF/IDD parser.
+
+Works like black: give it files and/or folders, they are reformatted in place, in parallel. Use --check or --diff to
+only see what would change.
+"""
 
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
-from energyplus_parser.cpp.unit_test_file import UnitTestFile
-from energyplus_parser.idd.idd_file import IddFile
+from energyplus_parser import runner
 from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_file import IdfFile
+from energyplus_parser.runner import Job, Kind, Mode
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
-def _resolve_output(input_path: Path, output_path: Path | None, overwrite: bool, suffix: str) -> Path | None:
-    """Return the resolved output Path, or None when writing to stdout."""
-    if output_path is not None and str(output_path) == "-":
-        return None  # stdout
-    if output_path is None:
-        return input_path if overwrite else input_path.with_name(input_path.stem + suffix)
-    return output_path
+DESCRIPTIONS = {
+    Kind.IDF: "Reformat EnergyPlus IDF files.",
+    Kind.IDD: "Reformat EnergyPlus IDD files.",
+    Kind.UNIT_TEST: (
+        'Reformat the IDF embedded in EnergyPlus C++ unit tests, in delimited_string({...}) and R"IDF(...)IDF" blocks.'
+    ),
+}
 
 
-def _write_output(text: str, output_path: Path | None, overwrite: bool) -> None:
-    if output_path is None:
-        sys.stdout.write(text)
-    else:
-        if output_path.exists() and not overwrite:
-            print(f"Error: {output_path} already exists. Use --overwrite to allow.", file=sys.stderr)
-            sys.exit(1)
-        output_path.write_text(text, encoding="utf-8")
-        print(f"Written to: {output_path}")
-
-
-# ---------------------------------------------------------------------------
-# reformat_idf subcommand
-# ---------------------------------------------------------------------------
-
-
-def _add_reformat_idf(subparsers) -> None:
-    p = subparsers.add_parser(
-        "reformat_idf",
-        help="Parse and re-serialise an EnergyPlus IDF file.",
-        description="Parse an IDF file using the given IDD and write the reformatted result.",
-    )
-    p.add_argument("idf_path", type=Path, help="Path to the input IDF file.")
+def _add_subcommand(subparsers, name: str, kind: Kind) -> None:
+    p = subparsers.add_parser(name, help=DESCRIPTIONS[kind], description=DESCRIPTIONS[kind])
+    patterns = ", ".join(f"*{s}" for s in kind.suffixes)
     p.add_argument(
-        "--idd",
-        dest="idd_path",
+        "paths",
         type=Path,
-        required=True,
-        metavar="IDD_PATH",
-        help="Path to the EnergyPlus IDD file.",
+        nargs="+",
+        metavar="PATH",
+        help=f"Files or folders. Folders are searched recursively for {patterns}.",
     )
-    p.add_argument(
+    if kind.needs_idd:
+        p.add_argument(
+            "--idd", dest="idd_path", type=Path, required=True, metavar="IDD_PATH", help="Path to the IDD file."
+        )
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--check", action="store_true", help="Don't write: list the files that would change, exit 1 if any."
+    )
+    mode.add_argument("--diff", action="store_true", help="Don't write: print a unified diff of the changes.")
+    mode.add_argument(
         "-o",
         "--output",
         dest="output_path",
         type=Path,
-        default=None,
         metavar="OUTPUT_PATH",
-        help=(
-            "Path to write the serialised IDF. "
-            "Defaults to <idf_path>.out.idf when not specified. "
-            "Pass '-' to write to stdout."
-        ),
+        help="Write to this file instead of in place ('-' for stdout). Only with a single input file.",
     )
     p.add_argument(
-        "--leading",
-        dest="idf_leading",
+        "--exclude",
+        type=re.compile,
+        metavar="REGEX",
+        help="Skip files found in folders whose path matches this regex. Files given explicitly are always processed.",
+    )
+    p.add_argument(
+        "-j",
+        "--workers",
         type=int,
         default=None,
         metavar="N",
-        help=(
-            f"Leading spaces before each object-type name line "
-            f"(IDF_LEADING constant, default: {idf_constants.IDF_LEADING})."
-        ),
+        help="Number of parallel processes (default: number of CPUs).",
     )
-    p.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow overwriting an existing output file.",
-    )
-    p.set_defaults(func=_cmd_reformat_idf)
-
-
-def _cmd_reformat_idf(args, parser) -> None:
-    idf_path: Path = args.idf_path
-    idd_path: Path = args.idd_path
-
-    if not idf_path.exists():
-        parser.error(f"IDF file not found: {idf_path}")
-    if not idd_path.exists():
-        parser.error(f"IDD file not found: {idd_path}")
-
-    if args.idf_leading is not None:
-        if args.idf_leading < 0:
-            parser.error("--leading must be a non-negative integer.")
-        idf_constants.IDF_LEADING = args.idf_leading
-
-    idd = IddFile.load(idd_path)
-    idf = IdfFile.load(idf_path, idd)
-
-    output_path = _resolve_output(idf_path, args.output_path, args.overwrite, ".out.idf")
-    _write_output(str(idf), output_path, args.overwrite)
-
-
-# ---------------------------------------------------------------------------
-# reformat_idd subcommand
-# ---------------------------------------------------------------------------
-
-
-def _add_reformat_idd(subparsers) -> None:
-    p = subparsers.add_parser(
-        "reformat_idd",
-        help="Parse and re-serialise an EnergyPlus IDD file.",
-        description="Parse an IDD file and write the reformatted result.",
-    )
-    p.add_argument("idd_path", type=Path, help="Path to the input IDD file.")
-    p.add_argument(
-        "-o",
-        "--output",
-        dest="output_path",
-        type=Path,
-        default=None,
-        metavar="OUTPUT_PATH",
-        help=(
-            "Path to write the serialised IDD. "
-            "Defaults to <idd_path>.out.idd when not specified. "
-            "Pass '-' to write to stdout."
-        ),
-    )
-    p.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow overwriting an existing output file.",
-    )
-    p.set_defaults(func=_cmd_reformat_idd)
-
-
-def _cmd_reformat_idd(args, parser) -> None:
-    idd_path: Path = args.idd_path
-
-    if not idd_path.exists():
-        parser.error(f"IDD file not found: {idd_path}")
-
-    idd = IddFile.load(idd_path)
-
-    output_path = _resolve_output(idd_path, args.output_path, args.overwrite, ".out.idd")
-    _write_output(str(idd), output_path, args.overwrite)
-
-
-# ---------------------------------------------------------------------------
-# reformat_unit_test subcommand
-# ---------------------------------------------------------------------------
-
-
-def _add_reformat_unit_test(subparsers) -> None:
-    p = subparsers.add_parser(
-        "reformat_unit_test",
-        help="Reformat IDF content embedded in a C++ EnergyPlus unit test file.",
-        description=(
-            "Parse and reformat IDF blocks inside delimited_string({...}) and "
-            "R\"IDF(...)IDF\" blocks in a C++ unit test file."
-        ),
-    )
-    p.add_argument("cc_path", type=Path, help="Path to the input .unit.cc file.")
-    p.add_argument(
-        "--idd",
-        dest="idd_path",
-        type=Path,
-        required=True,
-        metavar="IDD_PATH",
-        help="Path to the EnergyPlus IDD file.",
-    )
-    p.add_argument(
-        "-o",
-        "--output",
-        dest="output_path",
-        type=Path,
-        default=None,
-        metavar="OUTPUT_PATH",
-        help=(
-            "Path to write the reformatted file. "
-            "Defaults to <cc_path>.out.cc when not specified. "
-            "Pass '-' to write to stdout."
-        ),
-    )
-    p.add_argument(
-        "--leading",
-        dest="idf_leading",
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "Leading spaces before each object-type name line "
-            f"(IDF_LEADING constant, defaults to {idf_constants.IDF_LEADING})."
-        ),
-    )
-    p.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Allow overwriting an existing output file.",
-    )
-    p.set_defaults(func=_cmd_reformat_unit_test)
-
-
-def _cmd_reformat_unit_test(args, parser) -> None:
-    cc_path: Path = args.cc_path
-    idd_path: Path = args.idd_path
-
-    if not cc_path.exists():
-        parser.error(f"C++ file not found: {cc_path}")
-    if not idd_path.exists():
-        parser.error(f"IDD file not found: {idd_path}")
-
-    if args.idf_leading is not None:
-        if args.idf_leading < 0:
-            parser.error("--leading must be a non-negative integer.")
-        idf_constants.IDF_LEADING = args.idf_leading
-
-    idd = IddFile.load(idd_path)
-
-    unit_test_file = UnitTestFile.from_path(cc_path)
-
-    output_path = _resolve_output(cc_path, args.output_path, args.overwrite, ".out.cc")
-    _write_output(unit_test_file.reformat(idd), output_path, args.overwrite)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+    p.add_argument("-q", "--quiet", action="store_true", help="Only print errors and the summary.")
+    if kind is not Kind.IDD:
+        p.add_argument(
+            "--leading",
+            dest="idf_leading",
+            type=int,
+            default=None,
+            metavar="N",
+            help=f"Leading spaces before each object-type line (default: {idf_constants.IDF_LEADING}).",
+        )
+        p.add_argument(
+            "--keep-integer-reals",
+            action="store_true",
+            help='Keep a number written as an integer as is in a real field ("8" instead of "8.0").',
+        )
+    p.set_defaults(kind=kind)
 
 
 def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="energyplus-parser",
-        description="Parse and re-serialise EnergyPlus IDF/IDD files.",
-    )
+    parser = argparse.ArgumentParser(prog="energyplus-parser", description="Reformat EnergyPlus files.")
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     subparsers.required = True
-    _add_reformat_idf(subparsers)
-    _add_reformat_idd(subparsers)
-    _add_reformat_unit_test(subparsers)
+    _add_subcommand(subparsers, "reformat_idf", Kind.IDF)
+    _add_subcommand(subparsers, "reformat_idd", Kind.IDD)
+    _add_subcommand(subparsers, "reformat_unit_test", Kind.UNIT_TEST)
     return parser
 
 
-def main(args_: list[str] | None = None) -> None:
+def _make_job(args, parser: argparse.ArgumentParser) -> Job:
+    kind: Kind = args.kind
+    idd_path = getattr(args, "idd_path", None)
+    if idd_path is not None and not idd_path.is_file():
+        parser.error(f"IDD file not found: {idd_path}")
+    constants: list[tuple[str, object]] = []
+    if getattr(args, "idf_leading", None) is not None:
+        if args.idf_leading < 0:
+            parser.error("--leading must be a non-negative integer.")
+        constants.append(("IDF_LEADING", args.idf_leading))
+    if getattr(args, "keep_integer_reals", False):
+        constants.append(("IDF_KEEP_INTEGER_REALS", True))
+    mode = Mode.CHECK if args.check else Mode.DIFF if args.diff else Mode.WRITE
+    return Job(kind=kind, mode=mode, idd_path=idd_path, constants=tuple(constants))
+
+
+def main(args_: list[str] | None = None) -> int:
     parser = get_parser()
     args = parser.parse_args(args_)
-    args.func(args, parser)
+
+    for path in args.paths:
+        if not path.exists():
+            parser.error(f"path not found: {path}")
+    if args.workers is not None and args.workers < 1:
+        parser.error("--workers must be at least 1.")
+    job = _make_job(args, parser)
+
+    if args.output_path is not None:
+        # Single file, written elsewhere
+        if len(args.paths) != 1 or args.paths[0].is_dir():
+            parser.error("-o/--output needs exactly one input file.")
+        runner.init_worker(job)
+        text = runner.reformat_text(job.kind, args.paths[0].read_text(encoding="utf-8"))
+        if str(args.output_path) == "-":
+            sys.stdout.write(text)
+        else:
+            args.output_path.write_text(text, encoding="utf-8")
+        return 0
+
+    files = runner.collect_files(args.paths, job.kind, args.exclude)
+    if not files:
+        print("No files to reformat.", file=sys.stderr)
+        return 0
+    results = runner.run(files, job, workers=args.workers)
+    return runner.report(results, job, quiet=args.quiet)
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    sys.exit(main())
