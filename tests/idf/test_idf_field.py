@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from energyplus_parser.idd.idd_field import BoundTypes, IddField
@@ -5,7 +7,7 @@ from energyplus_parser.idf.idf_field import ChoiceField, FieldValidationError, I
 from tests.assertions import assert_has_method, refute_has_method
 
 
-def test_idf_real_autocalculated_field():
+def test_idf_real_autocalculated_field(caplog):
     objectName = "FakeObject"
     ori_text = r"""  N6 , \field Surface Layer Penetration Depth
        \type real
@@ -38,6 +40,13 @@ def test_idf_real_autocalculated_field():
     with pytest.raises(FieldValidationError, match="-5.0 must be > 0.0"):
         field.setDouble(-5.0)
 
+    # Autosize on an autocalculatable-only field warns and switches to Autocalculate
+    with caplog.at_level(logging.WARNING, logger="IdfField"):
+        field.setString("Autosize")
+    assert field.is_autocalculated()
+    assert not field.is_autosized()
+    assert any("switching to Autocalculate" in m for m in caplog.messages)
+
     assert_has_method(field, "setString")
 
     assert_has_method(field, "setDouble")
@@ -50,7 +59,7 @@ def test_idf_real_autocalculated_field():
     refute_has_method(field, "setBool")
 
 
-def test_idf_real_autosizable_field():
+def test_idf_real_autosizable_field(caplog):
     objectName = "FakeObject"
     ori_text = r"""  N13; \field Cooling Coil Gross Rated Sensible Heat Ratio
        \note Rated sensible heat ratio (gross sensible capacity/gross total capacity)
@@ -87,8 +96,12 @@ def test_idf_real_autosizable_field():
     with pytest.raises(FieldValidationError, match="0.4 must be > 0.5"):
         field.setDouble(0.4)
 
-    with pytest.raises(FieldValidationError, match="Autocalculate not allowed"):
-        field.autocalculate()
+    # Autocalculate on an autosizable-only field warns and switches to Autosize
+    with caplog.at_level(logging.WARNING, logger="IdfField"):
+        field.setString("Autocalculate")
+    assert field.is_autosized()
+    assert not field.is_autocalculated()
+    assert any("switching to Autosize" in m for m in caplog.messages)
 
     assert_has_method(field, "setString")
 
@@ -102,7 +115,7 @@ def test_idf_real_autosizable_field():
     refute_has_method(field, "setBool")
 
 
-def test_idf_integer_autosizable_field():
+def test_idf_integer_autosizable_field(caplog):
     objectName = "FakeObject"
     ori_text = r"""  N3 , \field Number of Beams
        \note Number of individual beam units in the zone
@@ -136,8 +149,12 @@ def test_idf_integer_autosizable_field():
     with pytest.raises(FieldValidationError, match="1 must be > 0"):
         field.setInt(-1)
 
-    with pytest.raises(FieldValidationError, match="Autocalculate not allowed"):
-        field.autocalculate()
+    # Autocalculate on an autosizable-only field warns and switches to Autosize
+    with caplog.at_level(logging.WARNING, logger="IdfField"):
+        field.setString("Autocalculate")
+    assert field.is_autosized()
+    assert not field.is_autocalculated()
+    assert any("switching to Autosize" in m for m in caplog.messages)
 
     assert_has_method(field, "setString")
 
@@ -149,6 +166,23 @@ def test_idf_integer_autosizable_field():
     assert_has_method(field, "is_autocalculated")
 
     refute_has_method(field, "setBool")
+
+
+def test_idf_real_not_autosizable_nor_autocalculatable_field():
+    objectName = "FakeObject"
+    ori_text = r"""  N1 , \field Some Real
+       \type real
+       \minimum 0.0"""
+
+    idd_field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
+
+    field = RealField(idd_field=idd_field)
+
+    with pytest.raises(FieldValidationError, match="Autocalculate not allowed"):
+        field.autocalculate()
+
+    with pytest.raises(FieldValidationError, match="Autosize not allowed"):
+        field.autosize()
 
 
 def test_idf_choice_field_boolean():

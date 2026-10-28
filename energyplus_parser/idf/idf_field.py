@@ -1,9 +1,12 @@
+import logging
 from abc import ABC, abstractmethod
 from enum import StrEnum
 
 from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
 from energyplus_parser.idf.idf_constants import format_idf_field
+
+LOG = logging.getLogger("IdfField")
 
 
 class NumericMode(StrEnum):
@@ -154,14 +157,26 @@ class NumericField(IdfField):
         return self._mode
 
     def autocalculate(self):
+        # EnergyPlus's InputProcessor treats "Autosize" and "Autocalculate" as synonyms, so accept it
+        # on an autosizable-only field, but switch it to the keyword the field actually supports.
         if not self.autocalculatable:
-            raise FieldValidationError("Autocalculate not allowed")
+            if not self.autosizable:
+                raise FieldValidationError("Autocalculate not allowed")
+            LOG.warning(f"Field '{self.idd_field.name}' is autosizable, not autocalculatable — switching to Autosize")
+            self.autosize()
+            return
         self._mode = NumericMode.AUTOCALCULATE
         self._value = None
 
     def autosize(self):
         if not self.autosizable:
-            raise FieldValidationError("Autosize not allowed")
+            if not self.autocalculatable:
+                raise FieldValidationError("Autosize not allowed")
+            LOG.warning(
+                f"Field '{self.idd_field.name}' is autocalculatable, not autosizable — switching to Autocalculate"
+            )
+            self.autocalculate()
+            return
         self._mode = NumericMode.AUTOSIZE
         self._value = None
 
