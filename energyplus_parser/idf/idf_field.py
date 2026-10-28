@@ -48,7 +48,10 @@ class IdfField(ABC):
         elif field_type == IddFieldType.RealType:
             field = RealField(idd_field=idd_field)
         elif field_type == IddFieldType.ChoiceType:
-            field = ChoiceField(idd_field=idd_field)
+            if (idd_field.objectName.lower(), idd_field.name.lower()) == ("schedule:week:compact", "daytype list"):
+                field = DayTypeListField(idd_field=idd_field)
+            else:
+                field = ChoiceField(idd_field=idd_field)
         elif field_type == IddFieldType.NodeType:
             field = NodeField(idd_field=idd_field)
         elif field_type == IddFieldType.ObjectListType:
@@ -119,6 +122,38 @@ class AlphaField(IdfField):
 
     def validate(self):
         super().validate()
+
+
+class DayTypeListField(AlphaField):
+    """Schedule:Week:Compact "DayType List": a choice field in the IDD, but EnergyPlus takes any text containing at
+    least one day type, eg "For: Weekdays Holiday" (ScheduleManager.cc ProcessForDayTypes, and its schema generator
+    drops the keys). It's kept as written."""
+
+    # What ProcessForDayTypes searches for, in the upper-cased value
+    DAY_TYPES = (
+        "WEEKDAY",
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "WEEKEND",
+        "SATURDAY",
+        "SUNDAY",
+        "CUSTOMDAY1",
+        "CUSTOMDAY2",
+        "ALLDAY",
+        "HOLIDAY",
+        "SUMMER",
+        "WINTER",
+        "ALLOTHERDAY",
+    )
+
+    def setString(self, value: str):
+        v = value.strip()
+        if v and not any(day in v.upper() for day in self.DAY_TYPES):
+            raise FieldValidationError(f"Field '{self.idd_field.name}' - No valid day type in: {v}")
+        self._value = v
 
 
 class NumericField(IdfField):

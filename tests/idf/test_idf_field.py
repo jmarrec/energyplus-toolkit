@@ -3,8 +3,17 @@ import logging
 import pytest
 
 from energyplus_parser.idd.idd_field import BoundTypes, IddField
+from energyplus_parser.idd.idd_object import IddObject
 from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_field import ChoiceField, FieldValidationError, IntegerField, NumericMode, RealField
+from energyplus_parser.idf.idf_field import (
+    ChoiceField,
+    DayTypeListField,
+    FieldValidationError,
+    IdfField,
+    IntegerField,
+    NumericMode,
+    RealField,
+)
 from tests.assertions import assert_has_method, refute_has_method
 
 
@@ -339,3 +348,51 @@ def test_idf_real_field_number_of_vertices_keeps_integer_by_default():
     assert field.value_text() == "4.0"
     field.setString("autocalculate")
     assert field.value_text() == "Autocalculate"
+
+
+def _schedule_week_compact_daytype_list() -> IddField:
+    """The "DayType List" field of Schedule:Week:Compact: an extensible field, its name has no number."""
+    ori_text = r"""Schedule:Week:Compact,
+       \extensible:2
+  A1 , \field Name
+       \type alpha
+  A2 , \field DayType List 1
+       \begin-extensible
+       \type choice
+       \key AllDays
+       \key Weekdays
+       \key Holiday
+  A3 ; \field Schedule:Day Name 1
+       \type object-list
+       \object-list DayScheduleNames"""
+    return IddObject.load(group="Schedules", object_lines=ori_text.splitlines()).extensible_fields[0]
+
+
+@pytest.mark.parametrize(
+    "daytypes", ["For: Alldays", "For: AllDays", "Holiday Weekends", "For Weekdays SummerDesignDay"]
+)
+def test_idf_daytype_list_field_kept_as_written(daytypes):
+    """Flr_Rf_8Sides.idf: "For: Alldays" isn't one of the IDD keys, but EnergyPlus takes any text containing a day type
+    (ScheduleManager.cc ProcessForDayTypes), so it's kept as written."""
+    field = IdfField.from_idd_field(_schedule_week_compact_daytype_list())
+    assert isinstance(field, DayTypeListField)
+    field.setString(daytypes)
+    assert field.value_text() == daytypes
+
+
+def test_idf_daytype_list_field_needs_a_day_type():
+    """EnergyPlus: "No valid day assignments found in "for" days field"."""
+    field = IdfField.from_idd_field(_schedule_week_compact_daytype_list())
+    with pytest.raises(FieldValidationError, match="No valid day type"):
+        field.setString("For: Banana")
+
+
+def test_idf_other_choice_fields_still_validated():
+    ori_text = r"""  A1 , \field Terrain
+       \type choice
+       \key Country
+       \key City"""
+    field = IdfField.from_idd_field(IddField.load(objectName="Building", field_lines=ori_text.splitlines()))
+    assert isinstance(field, ChoiceField)
+    with pytest.raises(FieldValidationError, match="Invalid choice"):
+        field.setString("NotATerrain")
