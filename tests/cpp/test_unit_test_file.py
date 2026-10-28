@@ -534,3 +534,239 @@ def test_example_file_blocks_cover_whole_file():
     path = RESOURCES / "Example.unit.cc"
     original = path.read_text(encoding="utf-8")
     assert str(UnitTestFile(original)) == original
+
+
+# ---------------------------------------------------------------------------
+# Real-world cases, found by running on the EnergyPlus unit tests (tst/EnergyPlus/unit)
+# ---------------------------------------------------------------------------
+
+
+def delimited_blocks(text: str) -> list[DelimitedStringBlock]:
+    return [b for b in parse(text) if isinstance(b, DelimitedStringBlock)]
+
+
+@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
+def test_real_world_closer_double_paren(ep_idd):
+    """IdfParser.unit.cc: ``test_object(delimited_string({ ... }));``"""
+    src = """\
+    std::string const test_object(delimited_string({
+        "  Zone,",
+        "    Z1;",
+    }));
+
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z2;                      !- Name",
+    });
+"""
+    expected = """\
+    std::string const test_object(delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    }));
+
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z2;                      !- Name",
+    });
+"""
+    assert len(delimited_blocks(src)) == 2
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
+def test_real_world_closer_process_idf(ep_idd):
+    """``ASSERT_TRUE(process_idf(delimited_string({ ... })));``"""
+    src = """\
+    ASSERT_TRUE(process_idf(delimited_string({
+        "  Zone,",
+        "    Z1;",
+    })));
+"""
+    expected = """\
+    ASSERT_TRUE(process_idf(delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    })));
+"""
+    assert len(delimited_blocks(src)) == 1
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
+def test_real_world_closer_comma(ep_idd):
+    """CurveManager.unit.cc: ``{delimited_string({ ... }), "message"}`` in an initializer list."""
+    src = """\
+    std::vector<std::pair<std::string, std::string>> errors = {
+        {delimited_string({
+             "  Zone,",
+             "    Z1;",
+         }),
+         "Some error message"},
+    };
+"""
+    expected = """\
+    std::vector<std::pair<std::string, std::string>> errors = {
+        {delimited_string({
+             "Zone,",
+             "  Z1;                      !- Name",
+         }),
+         "Some error message"},
+    };
+"""
+    assert len(delimited_blocks(src)) == 1
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+@pytest.mark.xfail(strict=True, reason='only "});" is recognized as a delimited_string closer')
+def test_real_world_non_idf_block_does_not_swallow_next_block(ep_idd):
+    """EvaporativeFluidCoolers.unit.cc: an error string closing with ``})));`` must not run into the next block."""
+    src = """\
+    EXPECT_TRUE(compare_err_stream_substring(delimited_string({
+        "   ** Severe  ** Autosizing error for evaporative fluid cooler object = BIG EVAPORATIVEFLUIDCOOLER",
+    })));
+
+    std::string const idf_objects = delimited_string({
+        "  Zone,",
+        "    Z1;",
+    });
+"""
+    expected = """\
+    EXPECT_TRUE(compare_err_stream_substring(delimited_string({
+        "   ** Severe  ** Autosizing error for evaporative fluid cooler object = BIG EVAPORATIVEFLUIDCOOLER",
+    })));
+
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    });
+"""
+    blocks = delimited_blocks(src)
+    assert len(blocks) == 2
+    assert not blocks[0].is_idf_block()
+    assert blocks[1].is_idf_block()
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+@pytest.mark.xfail(strict=True, reason='delimited_string( inside a // comment is taken as a block opener')
+def test_real_world_opener_in_cpp_comment(ep_idd):
+    """DXCoils.unit.cc: a commented-out ``// EXPECT_TRUE( compare_eio_stream( delimited_string( {`` is not a block."""
+    src = """\
+    // EXPECT_TRUE( compare_eio_stream( delimited_string( {
+    // 	"! <Component Sizing Information>, Component Type, Component Name, Input Field Description, Value",
+    // 	" Component Sizing Information, Coil:Heating:DX:SingleSpeed, DX Heating coil, 0.00000" } ) ) );
+
+    std::string const idf_objects = delimited_string({
+        "  Zone,",
+        "    Z1;",
+    });
+"""
+    expected = """\
+    // EXPECT_TRUE( compare_eio_stream( delimited_string( {
+    // 	"! <Component Sizing Information>, Component Type, Component Name, Input Field Description, Value",
+    // 	" Component Sizing Information, Coil:Heating:DX:SingleSpeed, DX Heating coil, 0.00000" } ) ) );
+
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    });
+"""
+    assert len(delimited_blocks(src)) == 1
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+@pytest.mark.xfail(
+    strict=True, reason='raw string ends at the first )IDF" but the parser requires )IDF";, so pieces get merged'
+)
+def test_real_world_raw_string_split_for_msvc(ep_idd):
+    """UnitarySystem.unit.cc: raw strings split in pieces for MSVC C2026 (string too long) must be left unchanged.
+
+    Reformatting them as one would remove the split.
+    """
+    src = """\
+    std::string_view constexpr idf_objects = R"IDF(
+  Zone,
+    Z1,                      !- Name
+)IDF"
+                                             R"IDF(
+    0;                       !- Direction of Relative North {deg}
+)IDF";
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == src
+
+
+@pytest.mark.xfail(
+    strict=True, reason='raw string ends at the first )IDF" but the parser requires )IDF";, so pieces get merged'
+)
+def test_real_world_raw_string_split_for_msvc_in_comment(ep_idd):
+    """UnitarySystem.unit.cc: same, with the split hidden at the end of a ``!-`` comment.
+
+    The raw string ends at the first ``)IDF"``, which is inside what looks like an IDF comment.
+    """
+    src = """\
+    std::string_view constexpr idf_objects = R"IDF(
+  Zone,
+    Z1,                      !- Name   " )IDF"
+                                             R"IDF(" // split line for MSVC long string C2026
+    0;                       !- Direction of Relative North {deg}
+)IDF";
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == src
+
+
+@pytest.mark.xfail(strict=True, reason='adjacent C++ string literals are read as two IDF lines, and IdfFile drops one')
+def test_real_world_idf_line_split_in_two_cpp_strings(ep_idd):
+    """AirflowNetworkHVAC.unit.cc: one IDF line split over two adjacent C++ string literals is left unchanged."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "  Zone,",
+        "    Z1,                     !- Name "
+        "{dimensionless}",
+        "    0;",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == src
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        """\
+    std::string_view constexpr idf_objects = R"IDF(
+  Zone,
+    Z1; // Not a C++ comment in a raw string
+)IDF";
+""",
+        """\
+    std::string const idf_objects = delimited_string({
+        "  Zone,",
+        "    Z1; some trailing text",
+    });
+""",
+    ],
+    ids=["raw-string", "delimited-string"],
+)
+@pytest.mark.xfail(strict=True, reason="IdfFile silently drops text after the last ',' or ';' of a line")
+def test_real_world_text_dropped_by_idf_file_leaves_block_unchanged(ep_idd, caplog, src):
+    """Text that IdfFile would silently drop (after the last ',' or ';' of a line) must not be lost."""
+    with caplog.at_level(logging.WARNING, logger="CppParser"):
+        assert UnitTestFile(src).reformat(ep_idd) == src
+    assert caplog.messages
+
+
+@pytest.mark.xfail(strict=True, reason='block line numbers drift by one after each block')
+def test_real_world_block_line_numbers():
+    """Block start/end are the 0-based line numbers in the file, even after other blocks."""
+    src = """\
+    auto a = delimited_string({
+        "Zone,",
+        "  Z1;",
+    });
+    auto b = delimited_string({
+        "Zone,",
+        "  Z2;",
+    });
+"""
+    first, second = delimited_blocks(src)
+    assert (first.start, first.end) == (0, 3)
+    assert (second.start, second.end) == (4, 7)
