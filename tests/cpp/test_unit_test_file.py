@@ -758,3 +758,78 @@ def test_real_world_block_line_numbers():
     first, second = delimited_blocks(src)
     assert (first.start, first.end) == (0, 3)
     assert (second.start, second.end) == (4, 7)
+
+
+# ---------------------------------------------------------------------------
+# Non-canonical delimited_string layouts: always rewritten in the canonical layout, which clang-format keeps one string
+# per line thanks to the trailing comma.
+# Expected outputs are what clang-format-19 gives with EnergyPlus' tst/.clang-format
+# ---------------------------------------------------------------------------
+
+
+def test_reformat_first_string_on_opener_line(ep_idd):
+    """AirflowNetworkConditions.unit.cc: ``delimited_string({"Table:IndependentVariable,",`` and ``"  -0.56;"})``"""
+    src = """\
+    std::string const idf_objects = delimited_string({"  Zone,",
+                                                      "    Z1;"});
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+def test_reformat_brace_on_next_line(ep_idd):
+    """AirflowNetworkConditions.unit.cc: ``delimited_string(`` then ``{"Material,",`` on the next line."""
+    src = """\
+    std::string const idf_objects = delimited_string(
+        {"  Zone,",
+         "    Z1;"});
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+def test_reformat_last_string_on_closer_line(ep_idd):
+    """AirflowNetworkHVAC.unit.cc: ``delimited_string({`` on its own line, but ``"...;"})`` on the last one."""
+    src = """\
+    ASSERT_TRUE(process_idf(delimited_string({
+        "  Zone,",
+        "    Z1;"})));
+"""
+    expected = """\
+    ASSERT_TRUE(process_idf(delimited_string({
+        "Zone,",
+        "  Z1;                      !- Name",
+    })));
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
+def test_reformat_non_canonical_nested_in_initializer_list(ep_idd):
+    """In an initializer list, clang-format aligns '})' with 'delimited_string', and the strings 4 further."""
+    src = """\
+    std::vector<std::pair<std::string, std::string>> errors = {
+        {delimited_string({"  Zone,",
+                           "    Z1;"}),
+         "Some error message"},
+    };
+"""
+    expected = """\
+    std::vector<std::pair<std::string, std::string>> errors = {
+        {delimited_string({
+             "Zone,",
+             "  Z1;                      !- Name",
+         }),
+         "Some error message"},
+    };
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected

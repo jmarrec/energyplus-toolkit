@@ -27,7 +27,7 @@ Only IDF blocks are reformatted. Everything else is left untouched.
 1. Extract the IDF text (`idf_content`): the content of the quoted strings, or of the raw string.
 2. Reformat it with `IdfFile`.
 3. Write it back:
-   - `delimited_string`: one `"...",` per line, a real blank line between objects.
+   - `delimited_string`: `delimited_string({` and `})` on their own lines, one `"...",` per line, a real blank line between objects. Thanks to the trailing comma on every line, clang-format keeps one string per line. Blocks written differently (first string on the `delimited_string({` line, `{` on the next line, last string on the `})` line) are rewritten that way, with the indentation clang-format would use.
    - `R"IDF(`: flush left, with a blank line after `R"IDF(` and before `)IDF"`.
 
 ## 3. Keep C++ comments (`delimited_string` only)
@@ -69,7 +69,7 @@ If a block can't be reformatted safely, it is kept as is and a warning is logged
 - the IDF can't be parsed, or an object type isn't in the IDD (`IdfFile` would drop it)
 - a line has text that isn't part of a field, ie after its last `,` / `;` (`IdfFile` would drop it). Eg a value whose `,` is on the next line, or an IDF line split over two C++ strings (`"... !- Name "` `"{dimensionless}",`)
 - a line in a `delimited_string` isn't a string, a `//` comment, or blank (eg `std::format(...)`, `"..." + var + "..."`)
-- `delimited_string({` / `})` or `R"IDF(` / `)IDF"` aren't on their own lines
+- `R"IDF(` / `)IDF"` aren't on their own lines
 - a raw string is split in several pieces (`)IDF"` followed by `R"IDF(`, to avoid MSVC error C2026)
 - the IDF contains `"` or `\` (would need C++ escaping)
 - a comment's value can't be found after reformatting

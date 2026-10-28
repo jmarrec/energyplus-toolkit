@@ -244,17 +244,39 @@ class PotentialIdfBlock(Block, ABC):
 
 
 class DelimitedStringBlock(PotentialIdfBlock):
-    """A ``delimited_string({ ... })`` block."""
+    """A ``delimited_string({ ... })`` block.
 
-    def __init__(self, content: str, start: int, end: int) -> None:
+    It is always written back in the canonical layout: ``delimited_string({`` and ``})`` on their own lines, and one
+    ``"...",`` per line. Thanks to the trailing comma, clang-format keeps it that way.
+    """
+
+    def __init__(self, content: str, start: int, end: int, closer_indent: str = "") -> None:
         # set before super().__init__ calls _parse_idf_content
         self.cpp_comments: list[CppComment] = []
         self.indent = ""  # indentation of the first quoted string line
+        # Where clang-format puts '})' when the block is rewritten: see UnitTestFile._closer_indent
+        self.closer_indent = closer_indent
         super().__init__(content, start, end)
+
+    def _inner_lines(self) -> list[str] | None:
+        """The lines between ``delimited_string({`` and the closing ``}``, or None if the block is malformed.
+
+        What's left of the opener line and the indentation before ``}`` are dropped when blank.
+        """
+        m_open = DELIMITED_OPEN_RE.match(self.content)
+        close_idx = self.content.rfind("}")
+        if m_open is None or close_idx < m_open.end():
+            return None
+        inner_lines = self.content[m_open.end() : close_idx].splitlines()
+        if inner_lines and not inner_lines[0].strip():
+            inner_lines.pop(0)
+        if inner_lines and not inner_lines[-1].strip():
+            inner_lines.pop()
+        return inner_lines
 
     def _detect_idf(self) -> bool:
         """Scan quoted string lines for at least one IDF object-type line."""
-        for line in self.content.splitlines():
+        for line in self._inner_lines() or []:
             m = CPP_STRING_RE.match(line.rstrip("\n\r"))
             if m:
                 idf_content = m.group(2).strip()
@@ -271,19 +293,12 @@ class DelimitedStringBlock(PotentialIdfBlock):
         Blank lines (and empty "" strings) become blank IDF lines, as they separate IDF comments from objects.
         C++ comments (standalone or inline) are not part of the IDF content, they are recorded in ``cpp_comments``.
         """
-        m_open = DELIMITED_OPEN_RE.match(self.content)
-        close_idx = self.content.rfind("}")
-        if m_open is None or close_idx < m_open.end():
+        inner_lines = self._inner_lines()
+        if inner_lines is None:
             LOG.warning(f"{self._where()}: malformed delimited_string block — leaving unchanged")
             return None
 
         idf_lines: list[str] = []
-        inner_lines = self.content[m_open.end() : close_idx].splitlines()
-        # Drop what's left of the 'delimited_string({' line and the indentation before '})', when blank
-        if inner_lines and not inner_lines[0].strip():
-            inner_lines.pop(0)
-        if inner_lines and not inner_lines[-1].strip():
-            inner_lines.pop()
 
         found_string = False
         for line in inner_lines:
@@ -310,16 +325,24 @@ class DelimitedStringBlock(PotentialIdfBlock):
     def _reformat(self, idd: IddFile) -> str | None:
         assert self.idf_content is not None
         lines = self.content.splitlines(keepends=True)
-        # Only handle the canonical layout, with delimited_string({ ending its line and }) on its own line
-        if (
-            len(lines) < 2
-            or not DELIMITED_OPEN_RE.fullmatch(lines[0].strip())
-            or re.fullmatch(r"\}\s*\)", lines[-1].strip()) is None
-        ):
-            return None
         if '"' in self.idf_content or "\\" in self.idf_content:
             return None  # would need C++ escaping
         eol = "\r\n" if lines[0].endswith("\r\n") else "\n"
+
+        # Already in the canonical layout: keep its opener, closer and indentation. Otherwise (strings on the opener or
+        # closer line, or '{' on the line after 'delimited_string('), rewrite it with clang-format's indentation.
+        if (
+            len(lines) > 1
+            and DELIMITED_OPEN_RE.fullmatch(lines[0].strip())
+            and re.fullmatch(r"\}\s*\)", lines[-1].strip())
+        ):
+            opener, indent, closer = lines[0], self.indent, lines[-1]
+        else:
+            opener, indent, closer = (
+                f"delimited_string({{{eol}",
+                self.closer_indent + "    ",
+                f"{self.closer_indent}}})",
+            )
 
         formatted = _format_idf(self.idf_content, idd, self._where())
         if formatted is None:
@@ -352,17 +375,17 @@ class DelimitedStringBlock(PotentialIdfBlock):
 
         body: list[str] = []
         for n, idf_line in enumerate(formatted):
-            body.extend(f"{self.indent}{text}{eol}" for text in before[n])
+            body.extend(f"{indent}{text}{eol}" for text in before[n])
             if not idf_line:
                 body.append(eol)
                 continue
-            cpp_line = f'{self.indent}"{idf_line}",'
+            cpp_line = f'{indent}"{idf_line}",'
             if inline[n]:
                 cpp_line += " " + " ".join(inline[n])
             body.append(f"{cpp_line}{eol}")
-        body.extend(f"{self.indent}{text}{eol}" for text in trailing)
+        body.extend(f"{indent}{text}{eol}" for text in trailing)
 
-        return lines[0] + "".join(body) + lines[-1]
+        return opener + "".join(body) + closer
 
 
 class RawStringBlock(PotentialIdfBlock):
@@ -549,11 +572,24 @@ class UnitTestFile:
                         content=text[pos:close_end],
                         start=self._line(pos),
                         end=self._line(close_end - 1),
+                        closer_indent=self._closer_indent(pos),
                     )
                 )
                 regular_start = pos = close_end
         self._add_regular(regular_start, len(text))
         self._mark_concatenated_raw_strings()
+
+    def _closer_indent(self, pos: int) -> str:
+        """Indentation clang-format gives the '})' of a delimited_string starting at ``pos``, once rewritten.
+
+        It's the indentation of the line, unless the block is in an initializer list opened earlier on that line (eg
+        ``{delimited_string({``): then '})' is aligned with ``delimited_string``.
+        """
+        line_start = self.content.rfind("\n", 0, pos) + 1
+        prefix = self.content[line_start:pos]
+        if "{" in prefix:
+            return " " * len(prefix)
+        return prefix[: len(prefix) - len(prefix.lstrip())]
 
     def _line(self, pos: int) -> int:
         """0-based line number of character ``pos``."""
