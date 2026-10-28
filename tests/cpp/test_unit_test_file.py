@@ -760,6 +760,22 @@ def test_real_world_block_line_numbers():
     assert (second.start, second.end) == (4, 7)
 
 
+def test_real_world_integer_field_given_as_float(ep_idd):
+    """SolarShading.unit.cc: "512.0, !- Pixel Counting Resolution" is an integer field given as a float: EnergyPlus
+    accepts it, so the block is reformatted (with the value written as an integer) instead of being skipped."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "  Timestep,4.0;",
+    });
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Timestep,4;",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
 # ---------------------------------------------------------------------------
 # Non-canonical delimited_string layouts: always rewritten in the canonical layout, which clang-format keeps one string
 # per line thanks to the trailing comma.

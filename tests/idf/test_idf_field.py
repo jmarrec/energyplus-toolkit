@@ -231,3 +231,51 @@ def test_idf_choice_field_boolean():
     refute_has_method(field, "is_autocalculated")
 
     assert_has_method(field, "setBool")
+
+
+# ---------------------------------------------------------------------------
+# Integer fields given as a float with no fractional part
+# eg SolarShading.unit.cc: "512.0, !- Pixel Counting Resolution"
+# They are accepted and stored as an int. Anything else is rejected: this is stricter than EnergyPlus, which rounds any
+# number (InputProcessor.unit.cc tests that 2.1 and 1.9 give 2)
+# ---------------------------------------------------------------------------
+
+PIXEL_COUNTING_RESOLUTION_IDD = r"""  N3 , \field Pixel Counting Resolution
+       \note Number of pixels in both dimensions of the surface rendering
+       \type integer
+       \default 512"""
+
+
+@pytest.mark.parametrize("text", ["512.0", "512.00", "5.12e2", " 512.0 "])
+def test_idf_integer_field_accepts_float_with_no_fractional_part(text):
+    idd_field = IddField.load(objectName="ShadowCalculation", field_lines=PIXEL_COUNTING_RESOLUTION_IDD.splitlines())
+    field = IntegerField(idd_field=idd_field)
+    field.setString(text)
+    assert field.value() == 512
+    assert isinstance(field.value(), int)
+
+
+@pytest.mark.parametrize("text", ["512.5", "2.1", "abc", "nan", "inf", "5_12", "5_12.0"])
+def test_idf_integer_field_rejects_non_integer(text):
+    idd_field = IddField.load(objectName="ShadowCalculation", field_lines=PIXEL_COUNTING_RESOLUTION_IDD.splitlines())
+    field = IntegerField(idd_field=idd_field)
+    with pytest.raises(FieldValidationError, match="Invalid integer"):
+        field.setString(text)
+
+
+@pytest.mark.parametrize("value", [512, 512.0])
+def test_idf_integer_field_set_int_accepts_float_with_no_fractional_part(value):
+    idd_field = IddField.load(objectName="ShadowCalculation", field_lines=PIXEL_COUNTING_RESOLUTION_IDD.splitlines())
+    field = IntegerField(idd_field=idd_field)
+    field.setInt(value)
+    assert field.value() == 512
+    assert isinstance(field.value(), int)
+
+
+@pytest.mark.parametrize("value", [512.5, float("nan"), float("inf")])
+def test_idf_integer_field_set_int_rejects_non_integer(value):
+    """A float with a fractional part used to be silently truncated (int(512.5) == 512)."""
+    idd_field = IddField.load(objectName="ShadowCalculation", field_lines=PIXEL_COUNTING_RESOLUTION_IDD.splitlines())
+    field = IntegerField(idd_field=idd_field)
+    with pytest.raises(FieldValidationError, match="Invalid integer"):
+        field.setInt(value)

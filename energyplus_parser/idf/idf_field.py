@@ -262,6 +262,9 @@ class IntegerField(NumericField):
     def setInt(self, value: int) -> None:
         if not isinstance(value, (float, int)):
             raise TypeError("IntegerField value must be an int")
+        # Accept a float with no fractional part, eg 512.0, but don't truncate 512.5
+        if isinstance(value, float) and not value.is_integer():  # also False for nan and inf
+            raise FieldValidationError(f"Invalid integer: {value}")
         v = int(value)
         self._validate_range(value=v)
         self._value = v
@@ -269,10 +272,23 @@ class IntegerField(NumericField):
 
     @classmethod
     def _parse_number(cls, value: str) -> int:
+        """Parse an integer, also accepting a float with no fractional part, eg "512.0".
+
+        Anything else is invalid. This is stricter than EnergyPlus, which rounds any number (2.1 -> 2).
+        """
+        if "_" in value:  # Python's int() and float() accept "1_000", IDF doesn't
+            raise FieldValidationError(f"Invalid integer: {value}")
         try:
             return int(value)
         except ValueError:
+            pass
+        try:
+            as_float = float(value)
+        except ValueError:
+            raise FieldValidationError(f"Invalid integer: {value}") from None
+        if not as_float.is_integer():  # also False for nan and inf
             raise FieldValidationError(f"Invalid integer: {value}")
+        return int(as_float)
 
 
 class RealField(NumericField):
