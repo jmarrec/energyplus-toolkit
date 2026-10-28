@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from energyplus_parser.cpp.unit_test_file import UnitTestFile
 from energyplus_parser.idd.idd_file import IddFile
 from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_file import IdfFile
@@ -154,6 +155,83 @@ def _cmd_reformat_idd(args, parser) -> None:
 
 
 # ---------------------------------------------------------------------------
+# reformat_unit_test subcommand
+# ---------------------------------------------------------------------------
+
+
+def _add_reformat_unit_test(subparsers) -> None:
+    p = subparsers.add_parser(
+        "reformat_unit_test",
+        help="Reformat IDF content embedded in a C++ EnergyPlus unit test file.",
+        description=(
+            "Parse and reformat IDF blocks inside delimited_string({...}) and "
+            "R\"IDF(...)IDF\" blocks in a C++ unit test file."
+        ),
+    )
+    p.add_argument("cc_path", type=Path, help="Path to the input .unit.cc file.")
+    p.add_argument(
+        "--idd",
+        dest="idd_path",
+        type=Path,
+        required=True,
+        metavar="IDD_PATH",
+        help="Path to the EnergyPlus IDD file.",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        dest="output_path",
+        type=Path,
+        default=None,
+        metavar="OUTPUT_PATH",
+        help=(
+            "Path to write the reformatted file. "
+            "Defaults to <cc_path>.out.cc when not specified. "
+            "Pass '-' to write to stdout."
+        ),
+    )
+    p.add_argument(
+        "--leading",
+        dest="idf_leading",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Leading spaces before each object-type name line "
+            f"(IDF_LEADING constant, defaults to {idf_constants.IDF_LEADING})."
+        ),
+    )
+    p.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow overwriting an existing output file.",
+    )
+    p.set_defaults(func=_cmd_reformat_unit_test)
+
+
+def _cmd_reformat_unit_test(args, parser) -> None:
+    cc_path: Path = args.cc_path
+    idd_path: Path = args.idd_path
+
+    if not cc_path.exists():
+        parser.error(f"C++ file not found: {cc_path}")
+    if not idd_path.exists():
+        parser.error(f"IDD file not found: {idd_path}")
+
+    if args.idf_leading is not None:
+        if args.idf_leading < 0:
+            parser.error("--leading must be a non-negative integer.")
+        idf_constants.IDF_LEADING = args.idf_leading
+
+    idd = IddFile.load(idd_path)
+
+    unit_test_file = UnitTestFile.from_path(cc_path)
+
+    output_path = _resolve_output(cc_path, args.output_path, args.overwrite, ".out.cc")
+    _write_output(unit_test_file.reformat(idd), output_path, args.overwrite)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -167,6 +245,7 @@ def get_parser() -> argparse.ArgumentParser:
     subparsers.required = True
     _add_reformat_idf(subparsers)
     _add_reformat_idd(subparsers)
+    _add_reformat_unit_test(subparsers)
     return parser
 
 
