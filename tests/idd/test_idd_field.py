@@ -1,3 +1,5 @@
+import pytest
+
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType, IddKey
 
@@ -261,6 +263,48 @@ def test_parse_idd_numeric_default():
     assert not field_props.externalLists
 
     assert str(field) == ori_text
+
+
+@pytest.mark.parametrize(
+    "min_text, max_text",
+    [
+        (">0.0", "<1.0"),
+        ("> 0.0", "< 1.0"),
+        (" >0", " <1"),
+        (" > 0.0", " < 1.0"),
+    ],
+    ids=["no-space", "space-after", "space-before", "space-both"],
+)
+def test_parse_idd_exclusive_bounds_spacing(min_text, max_text):
+    # Older EnergyPlus IDDs sometimes put a space between the tag and the operator, eg '\minimum >0' (V25-1-0 and
+    # earlier) or '\minimum > 0.0' (V8-1-0, V8-2-0)
+    objectName = "FakeObject"
+    ori_text = "\n".join(
+        [
+            r"  N1 ; \field Some Value",
+            r"       \type real",
+            rf"       \minimum{min_text}",
+            rf"       \maximum{max_text}",
+        ]
+    )
+
+    field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
+
+    field_props = field.properties
+    assert field_props.minBoundType == BoundTypes.ExclusiveBound
+    assert field_props.minBoundValue == 0.0
+    assert field_props.maxBoundType == BoundTypes.ExclusiveBound
+    assert field_props.maxBoundValue == 1.0
+
+    # Output is normalized to the current IDD convention
+    assert str(field) == "\n".join(
+        [
+            r"  N1 ; \field Some Value",
+            r"       \type real",
+            r"       \minimum> 0.0",
+            r"       \maximum< 1.0",
+        ]
+    )
 
 
 def test_is_name_field_with_references():
