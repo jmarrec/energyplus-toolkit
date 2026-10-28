@@ -284,10 +284,14 @@ class IddObject:
                         f"with current fields {num_fields} and extensible group size {denominator}"
                     )
                 extra_groups = int(numerator / denominator)
+                # A and N fields are numbered separately: each group advances by its number of fields of that letter
+                per_letter = {
+                    letter: sum(1 for f in self.extensible_fields if f.field_id[0] == letter) for letter in "AN"
+                }
                 extra_field_ids = []
                 for i in range(extra_groups):
                     for field in self.extensible_fields:
-                        field_num = int(field.field_id[1:]) + i + 1
+                        field_num = int(field.field_id[1:]) + (i + 1) * per_letter[field.field_id[0]]
                         field_id = f"{field.field_id[0]}{field_num}".ljust(
                             4 if self._original_number_of_fields > 100 else 3
                         )

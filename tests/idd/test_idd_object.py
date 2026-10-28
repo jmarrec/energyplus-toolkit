@@ -409,6 +409,64 @@ def test_parse_idd_object_weird_ground():
     assert str(idd_obj) == expected_str
 
 
+def assert_field_ids_consecutive(idd_text: str, expected_last: dict[str, int]) -> None:
+    """Every A / N field id is written once, numbered 1, 2, 3... separately for A and N."""
+    import re
+
+    for letter, last in expected_last.items():
+        ids = [int(m) for m in re.findall(rf"\b{letter}(\d+)\s*[,;]", idd_text)]
+        assert ids == list(range(1, last + 1)), f"{letter} fields: {ids}"
+
+
+def test_extra_extensible_fields_numbering_with_two_fields_per_group() -> None:
+    """Site:SpectrumData: the extra fields of a 2-field group (Wavelength, Spectrum) are N7, N8, N9... not N6, N7, N7..."""
+    ori_text = r"""Site:SpectrumData,
+       \min-fields 8
+       \extensible:2
+  A1 , \field Name
+       \required-field
+       \type alpha
+  A2 , \field Spectrum Data Type
+       \required-field
+       \type choice
+       \key Solar
+       \key Visible
+  N1 , \field Wavelength 1
+       \type real
+  N2 , \field Spectrum 1
+       \type real
+  N3 , \field Wavelength 2
+       \begin-extensible
+       \type real
+  N4 , \field Spectrum 2
+       \type real
+  N5 , N6,       \note fields as indicated
+  N7 , N8,       \note fields as indicated
+  N9 , N10;      \note fields as indicated
+"""
+    idd_obj = IddObject.load(group="Simulation Parameters", object_lines=ori_text.splitlines())
+    assert idd_obj._original_number_of_fields == 12
+    assert_field_ids_consecutive(str(idd_obj), {"A": 2, "N": 10})
+
+
+def test_extra_extensible_fields_numbering_with_mixed_group() -> None:
+    """A group (A, N): the next groups are A3, N2 then A4, N3, each letter numbered on its own."""
+    ori_text = r"""Some:Object,
+       \extensible:2
+  A1 , \field Name
+       \type alpha
+  A2 , \field Thing 1 Name
+       \begin-extensible
+       \type alpha
+  N1 , \field Thing 1 Value
+       \type real
+  A3 , N2 , A4 , N3;
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    assert idd_obj._original_number_of_fields == 7
+    assert_field_ids_consecutive(str(idd_obj), {"A": 4, "N": 3})
+
+
 def test_parse_idd_preserve_useless_fields_to_please_idfeditor():
     group = "Air Distribution"
     ori_text = r"""AirLoopHVAC:ZoneSplitter,
