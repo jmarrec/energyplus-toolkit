@@ -24,7 +24,13 @@ from pathlib import Path
 from energyplus_parser.cpp.unit_test_file import UnitTestFile
 from energyplus_parser.idd.idd_file import IddFile
 from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_file import IdfFile
+from energyplus_parser.idf.idf_file import IdfFile, find_lost_objects, find_text_outside_fields
+
+LOG = logging.getLogger("Runner")
+
+# Parametric objects mean the IDF is input for EnergyPlus' parametric preprocessor, with expressions like "=$height" in
+# its fields: it isn't a valid IDF until it's been preprocessed
+_PARAMETRIC_RE = re.compile(r"^\s*Parametric:", re.MULTILINE | re.IGNORECASE)
 
 
 class Kind(Enum):
@@ -36,6 +42,11 @@ class Kind(Enum):
     def suffixes(self) -> tuple[str, ...]:
         """File name endings searched for in folders."""
         return {Kind.IDF: (".idf",), Kind.IDD: (".idd", ".idd.in"), Kind.UNIT_TEST: (".unit.cc",)}[self]
+
+    @property
+    def ignored_suffixes(self) -> tuple[str, ...]:
+        """File name endings skipped, even when given explicitly (eg by pre-commit)."""
+        return {Kind.IDF: (".imf",)}.get(self, ())
 
     @property
     def needs_idd(self) -> bool:
@@ -86,7 +97,7 @@ def collect_files(paths: list[Path], kind: Kind, exclude: re.Pattern[str] | None
                 if exclude is not None and exclude.search(f.as_posix()):
                     continue
                 files.append(f)
-        else:
+        elif not path.name.endswith(kind.ignored_suffixes):
             files.append(path)
     return list(dict.fromkeys(files))  # dedupe, keeping order
 
@@ -119,7 +130,18 @@ def reformat_text(kind: Kind, text: str) -> str:
         return str(IddFile.fromString(text))
     assert _idd is not None, "init_worker must be called first"
     if kind is Kind.IDF:
-        return str(IdfFile.loads(text, _idd))
+        if _PARAMETRIC_RE.search(text):
+            LOG.warning("Parametric objects (needs the parametric preprocessor) — leaving unchanged")
+            return text
+        # Never lose content: leave the file unchanged if IdfFile would drop some of it
+        if (line := find_text_outside_fields(text)) is not None:
+            LOG.warning(f"text outside of an IDF field would be lost ({line!r}) — leaving unchanged")
+            return text
+        idf = IdfFile.loads(text, _idd)
+        if (reason := find_lost_objects(text, idf)) is not None:
+            LOG.warning(f"{reason} — leaving unchanged")
+            return text
+        return str(idf)
     return UnitTestFile(text).reformat(_idd)
 
 

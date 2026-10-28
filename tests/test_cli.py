@@ -143,3 +143,51 @@ def test_missing_path_is_an_error(tmp_path):
     with pytest.raises(SystemExit) as exc:
         main(["reformat_idf", "--idd", IDD, str(tmp_path / "nope.idf")])
     assert exc.value.code == 2
+
+
+def test_reformat_idf_ignores_imf(tmp_path, capsys):
+    """IMF files (EP-Macro) are skipped, in folders and when given explicitly (as pre-commit does)."""
+    (tmp_path / "a.idf").write_text(ZONE_IDF)
+    imf = tmp_path / "b.imf"
+    imf.write_text("##include something.imf\n")
+    assert main(["reformat_idf", "--idd", IDD, "--check", str(tmp_path), str(imf)]) == 1
+    assert capsys.readouterr().err.splitlines()[-1] == "1 file would be reformatted."
+
+
+def test_reformat_idf_leaves_parametric_files_unchanged(tmp_path, capsys):
+    """1ZoneParameterAspect.idf: "=$height" is for the parametric preprocessor, the file isn't a valid IDF yet."""
+    path = tmp_path / "parametric.idf"
+    text = "Version,26.1;\n  Parametric:SetValueForRun,\n    $height,3;\nZone,Z1,0,0,0,0,1,1,=$height;\n"
+    path.write_text(text)
+    assert main(["reformat_idf", "--idd", IDD, str(path)]) == 0
+    assert path.read_text() == text
+    err = capsys.readouterr().err
+    assert "Parametric objects" in err
+    assert err.splitlines()[-1] == "1 file left unchanged."
+
+
+def test_reformat_idf_parametric_in_a_comment_is_reformatted(tmp_path):
+    path = tmp_path / "in.idf"
+    path.write_text("! Parametric:SetValueForRun is not used here\nVersion,26.1;\nZone,Z1; ! Parametric: nope\n")
+    assert main(["reformat_idf", "--idd", IDD, "-q", str(path)]) == 0
+    assert "Zone,\n  Z1;                      ! Parametric: nope\n" in path.read_text()  # reformatted
+
+
+@pytest.mark.parametrize(
+    "text, warning",
+    [
+        # datasets/PrecipitationSchedulesUSA-fullset_Release.idf: a placeholder, not an IDF
+        ('You need to obtain the "PreciptationSchedulesUSA-fullset.idf" from the helpdesk\n', "text outside"),
+        ("Version,26.1;\nNot:An:Object,A;\nZone,Z1;\n", "expected 3 IDF object(s) but parsed 2"),
+    ],
+    ids=["text-outside-fields", "unknown-object"],
+)
+def test_reformat_idf_never_loses_content(tmp_path, capsys, text, warning):
+    """When IdfFile would drop part of the file, it's left unchanged, with a warning."""
+    path = tmp_path / "in.idf"
+    path.write_text(text)
+    assert main(["reformat_idf", "--idd", IDD, str(path)]) == 0
+    assert path.read_text() == text
+    err = capsys.readouterr().err
+    assert warning in err
+    assert err.splitlines()[-1] == "1 file left unchanged."

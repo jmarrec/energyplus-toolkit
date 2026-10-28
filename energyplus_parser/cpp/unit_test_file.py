@@ -23,9 +23,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_parser.idd.idd_file import IddFile
-from energyplus_parser.idf.idf_file import IdfFile
+from energyplus_parser.idf.idf_file import IdfFile, count_idf_objects, find_lost_objects, find_text_outside_fields
 
 LOG = logging.getLogger("CppParser")
 
@@ -137,37 +136,24 @@ def _locate_idf_values(idf_lines: list[str]) -> list[_IdfValue]:
     return values
 
 
-def _count_idf_objects(idf_text: str) -> int:
-    """Count IDF objects by counting ';' outside of ``!`` comments."""
-    return sum(line.split("!", 1)[0].count(";") for line in idf_text.splitlines())
-
-
 def _format_idf(idf_text: str, idd: IddFile, where: str) -> list[str] | None:
     """Parse and reformat IDF text, returning the formatted lines without leading/trailing blank lines.
 
     Returns None (and logs a warning) if the text can't be reformatted safely, eg if an object would be lost because
     its type isn't in the IDD.
     """
-    expected_count = _count_idf_objects(idf_text)
-    if expected_count == 0:
+    if count_idf_objects(idf_text) == 0:
         return None
-    for line in idf_text.splitlines():
-        # IdfFile only keeps what's before a ',' or ';' (and '!' comments): anything else would be silently lost
-        data = line.split("!", 1)[0]
-        if data[max(data.rfind(","), data.rfind(";")) + 1 :].strip():
-            LOG.warning(f"{where}: text outside of an IDF field would be lost ({line.strip()!r}) — leaving unchanged")
-            return None
+    if (line := find_text_outside_fields(idf_text)) is not None:
+        LOG.warning(f"{where}: text outside of an IDF field would be lost ({line!r}) — leaving unchanged")
+        return None
     try:
         idf = IdfFile.loads(idf_text, idd)
     except Exception as exc:
         LOG.warning(f"{where}: failed to parse IDF ({exc}) — leaving unchanged")
         return None
-    parsed_count = sum(1 for obj in idf.objects if obj.idd_object.name != COMMENT_ONLY_OBJECT_NAME)
-    if parsed_count != expected_count:
-        LOG.warning(
-            f"{where}: expected {expected_count} IDF object(s) but parsed {parsed_count} (check IDD version)"
-            " — leaving unchanged"
-        )
+    if (reason := find_lost_objects(idf_text, idf)) is not None:
+        LOG.warning(f"{where}: {reason} — leaving unchanged")
         return None
     lines = str(idf).splitlines()
     while lines and not lines[0].strip():

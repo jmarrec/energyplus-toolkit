@@ -9,6 +9,32 @@ from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
 LOG = logging.getLogger("IdfFile")
 
 
+def find_text_outside_fields(text: str) -> str | None:
+    """Return the first line with text that IdfFile would silently drop, or None.
+
+    IdfFile only keeps what's before a ',' or ';' (and '!' comments): anything after the last one of a line is lost.
+    """
+    for line in text.splitlines():
+        data = line.split("!", 1)[0]
+        if data[max(data.rfind(","), data.rfind(";")) + 1 :].strip():
+            return line.strip()
+    return None
+
+
+def count_idf_objects(text: str) -> int:
+    """Count IDF objects by counting ';' outside of ``!`` comments."""
+    return sum(line.split("!", 1)[0].count(";") for line in text.splitlines())
+
+
+def find_lost_objects(text: str, idf: "IdfFile") -> str | None:
+    """Return why some objects of ``text`` aren't in ``idf`` (eg not in the IDD, so skipped), or None."""
+    expected = count_idf_objects(text)
+    parsed = sum(1 for obj in idf.objects if obj.idd_object.name != COMMENT_ONLY_OBJECT_NAME)
+    if parsed != expected:
+        return f"expected {expected} IDF object(s) but parsed {parsed} (check IDD version)"
+    return None
+
+
 class IdfFileError(Exception):
     pass
 
