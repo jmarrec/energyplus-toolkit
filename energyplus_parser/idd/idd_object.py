@@ -76,6 +76,18 @@ class IddObjectProperties:
         return "\n".join(lines)
 
 
+def _compact_field_lines(fields: list[IddField], per_line: int = 10) -> list[str]:
+    """Write fields declared without a name as compact lines: "  N1, N2, N3,  \\note ..." (";" after the last one)."""
+    lines = []
+    for i in range(0, len(fields), per_line):
+        chunk = fields[i : i + per_line]
+        ids = " ".join(f"{f.field_id}{';' if f.is_last_field else ','}" for f in chunk)
+        notes = {f.properties.note for f in chunk}
+        note = notes.pop() if len(notes) == 1 else ""
+        lines.append(f"  {ids}  \\note {note}" if note else f"  {ids}")
+    return lines
+
+
 class IddObject:
     def __init__(self, group: str):
         self.name: str = ""
@@ -165,10 +177,11 @@ class IddObject:
 
         start_index = line_number - 1
         expanded_lines = []
+        unnamed_ids: set[str] = set()  # fields declared without a \field name, eg "N1, N2, N3,  \note ..."
         for line in object_lines[start_index:]:
             matches = list(RE_FIELD_START.finditer(line))
             self._original_number_of_fields += len(matches)
-            if len(matches) <= 1:
+            if len(matches) == 0 or (len(matches) == 1 and "\\field" in line):
                 expanded_lines.append(line)
                 continue
 
@@ -179,6 +192,7 @@ class IddObject:
             # Split multi-field lines: keep only field ids, ignore tail like \note ...
             for match in matches:
                 field_id = line[match.start() : match.end()].strip()  # drop trailing comma/semicolon
+                unnamed_ids.add(field_id[:-1].strip())
                 expanded_lines.append(f"{field_id} \\field {field_id[:-1]}")
                 expanded_lines.append(tail)
 
@@ -228,6 +242,9 @@ class IddObject:
             else:
                 self.fields.append(field)
 
+        for field in self.fields + self.extensible_fields:
+            field.unnamed = field.field_id in unnamed_ids
+
         # Calculate extensible groups required
         if self.properties.extensible:
             if self.properties.minFields > 0:
@@ -268,9 +285,16 @@ class IddObject:
             lines.append(f"{self.name},")
             lines.append(str(self.properties))
 
-            # print regular fields
-            for i, field in enumerate(self.fields):
-                lines.append(str(field))
+            # print regular fields, writing back the ones declared without a name compactly, as they were
+            unnamed_run: list[IddField] = []
+            for field in self.fields + [None]:  # type: ignore[list-item]
+                if field is not None and field.unnamed:
+                    unnamed_run.append(field)
+                    continue
+                lines.extend(_compact_field_lines(unnamed_run))
+                unnamed_run = []
+                if field is not None:
+                    lines.append(str(field))
 
             # print extensible fields
             for i, field in enumerate(self.extensible_fields):

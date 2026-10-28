@@ -283,129 +283,14 @@ def test_parse_idd_object_weird_ground():
     assert idd_obj.group == group
     assert len(idd_obj.fields) == 40
 
+    # Fields declared without names are written back compactly, still without names (no made-up "\\field N1")
     expected_str = r"""GroundHeatTransfer:Slab:XFACE,
        \memo This is only needed when using manual gridding (not recommended)
        \memo XFACE: X Direction cell face coordinates: m
-  N1 , \field N1
-       \note fields as indicated
-       \type real
-  N2 , \field N2
-       \note fields as indicated
-       \type real
-  N3 , \field N3
-       \note fields as indicated
-       \type real
-  N4 , \field N4
-       \note fields as indicated
-       \type real
-  N5 , \field N5
-       \note fields as indicated
-       \type real
-  N6 , \field N6
-       \note fields as indicated
-       \type real
-  N7 , \field N7
-       \note fields as indicated
-       \type real
-  N8 , \field N8
-       \note fields as indicated
-       \type real
-  N9 , \field N9
-       \note fields as indicated
-       \type real
-  N10, \field N10
-       \note fields as indicated
-       \type real
-  N11, \field N11
-       \note fields as indicated
-       \type real
-  N12, \field N12
-       \note fields as indicated
-       \type real
-  N13, \field N13
-       \note fields as indicated
-       \type real
-  N14, \field N14
-       \note fields as indicated
-       \type real
-  N15, \field N15
-       \note fields as indicated
-       \type real
-  N16, \field N16
-       \note fields as indicated
-       \type real
-  N17, \field N17
-       \note fields as indicated
-       \type real
-  N18, \field N18
-       \note fields as indicated
-       \type real
-  N19, \field N19
-       \note fields as indicated
-       \type real
-  N20, \field N20
-       \note fields as indicated
-       \type real
-  N21, \field N21
-       \note fields as indicated
-       \type real
-  N22, \field N22
-       \note fields as indicated
-       \type real
-  N23, \field N23
-       \note fields as indicated
-       \type real
-  N24, \field N24
-       \note fields as indicated
-       \type real
-  N25, \field N25
-       \note fields as indicated
-       \type real
-  N26, \field N26
-       \note fields as indicated
-       \type real
-  N27, \field N27
-       \note fields as indicated
-       \type real
-  N28, \field N28
-       \note fields as indicated
-       \type real
-  N29, \field N29
-       \note fields as indicated
-       \type real
-  N30, \field N30
-       \note fields as indicated
-       \type real
-  N31, \field N31
-       \note fields as indicated
-       \type real
-  N32, \field N32
-       \note fields as indicated
-       \type real
-  N33, \field N33
-       \note fields as indicated
-       \type real
-  N34, \field N34
-       \note fields as indicated
-       \type real
-  N35, \field N35
-       \note fields as indicated
-       \type real
-  N36, \field N36
-       \note fields as indicated
-       \type real
-  N37, \field N37
-       \note fields as indicated
-       \type real
-  N38, \field N38
-       \note fields as indicated
-       \type real
-  N39, \field N39
-       \note fields as indicated
-       \type real
-  N40; \field N40
-       \note fields as indicated
-       \type real
+  N1, N2, N3, N4, N5, N6, N7, N8, N9, N10,  \note fields as indicated
+  N11, N12, N13, N14, N15, N16, N17, N18, N19, N20,  \note fields as indicated
+  N21, N22, N23, N24, N25, N26, N27, N28, N29, N30,  \note fields as indicated
+  N31, N32, N33, N34, N35, N36, N37, N38, N39, N40;  \note fields as indicated
 """
 
     assert str(idd_obj) == expected_str
@@ -601,6 +486,23 @@ def test_parse_idd_object_obsolete(obsolete_line, replacement) -> None:
     assert idd_obj.properties.obsolete
     assert idd_obj.properties.obsolete_replacement == replacement
     assert f"       {obsolete_line}\n" in str(idd_obj)
+
+
+def test_unnamed_compact_fields_written_back_compact() -> None:
+    """GroundHeatTransfer:Basement:XFACE declares its fields without names: they must stay unnamed (no made-up
+    '\\field N1'), otherwise the epJSON schema gets named fields it doesn't have."""
+    ori_text = r"""GroundHeatTransfer:Basement:XFACE,
+    \memo XFACE: X Direction cell face coordinates: m
+       N1, N2, N3,  \note fields as indicated
+       N4, N5;      \note fields as indicated
+"""
+    idd_obj = IddObject.load(group="Detailed Ground Heat Transfer", object_lines=ori_text.splitlines())
+    assert len(idd_obj.fields) == 5
+    text = str(idd_obj)
+    assert "\\field" not in text
+    assert "\\type" not in text
+    assert_field_ids_consecutive(text, {"N": 5})
+    assert text.rstrip().splitlines()[-1].split("\\")[0].strip().endswith("N5;")
 
 
 def test_required_field_with_default_stays_required_in_idd() -> None:

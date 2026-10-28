@@ -211,6 +211,8 @@ class IddField:
     def __init__(self, objectName: str):
         self.name: str = ""
         self.field_id: str = ""
+        # Declared without a \field name, on a compact line ("N1, N2, N3,"): written back that way
+        self.unnamed: bool = False
         self.objectName: str = objectName  # Name of IddObject to which this field belongs
         self.properties: IddFieldProperties = IddFieldProperties()
         self.keys: list[IddKey] = []
