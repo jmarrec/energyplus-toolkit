@@ -1,3 +1,5 @@
+import pytest
+
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_object import IddObject, IddObjectProperties
 
@@ -575,3 +577,27 @@ SimulationControl,
 """
     idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
     assert idd_obj.name_field_index() is None
+
+
+@pytest.mark.parametrize(
+    "obsolete_line, replacement",
+    [
+        (r"\obsolete New=>deleted", "deleted"),
+        (r"\obsolete New=>Some:Other:Object", "Some:Other:Object"),
+        (r"\obsolete", ""),
+    ],
+)
+def test_parse_idd_object_obsolete(obsolete_line, replacement) -> None:
+    """Daylighting:DELight:ComplexFenestration: the replacement after \\obsolete must be kept, EnergyPlus' schema
+    generator requires it ("expected string after /obsolete")"""
+    ori_text = rf"""Daylighting:DELight:ComplexFenestration,
+       \memo Used for DElight Complex Fenestration of all types
+       {obsolete_line}
+       \min-fields 1
+  A1 ; \field Name
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Daylighting", object_lines=ori_text.splitlines())
+    assert idd_obj.properties.obsolete
+    assert idd_obj.properties.obsolete_replacement == replacement
+    assert f"       {obsolete_line}\n" in str(idd_obj)

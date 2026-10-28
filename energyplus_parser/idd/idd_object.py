@@ -1,5 +1,6 @@
 import logging
 import math
+import re
 
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import IddField
@@ -22,6 +23,7 @@ class IddObjectProperties:
 
         # True if this object is obsolete.
         self.obsolete: bool = False
+        self.obsolete_replacement: str = ""
 
         # Returns true if this object contains an IddField of type url.
         self.hasUrl: bool = False
@@ -58,7 +60,8 @@ class IddObjectProperties:
         if self.required:
             lines.append(f"{BLOCK_INDENT}\\required-object")
         if self.obsolete:
-            lines.append(f"{BLOCK_INDENT}\\obsolete")
+            replacement = f" New=>{self.obsolete_replacement}" if self.obsolete_replacement else ""
+            lines.append(f"{BLOCK_INDENT}\\obsolete{replacement}")
         if self.hasUrl:
             lines.append(f"{BLOCK_INDENT}\\url-object")
         if self.extensible:
@@ -128,6 +131,12 @@ class IddObject:
                 self.properties.required = True
             elif line.startswith('\\obsolete'):
                 self.properties.obsolete = True
+                # usage, if a replacement is available:
+                #       \obsolete New=>[New object name]
+                #   usage, if no replacement is available:
+                #       \obsolete New=>deleted
+                m = re.match(r"\\obsolete\s*(?:New=>)?(.*)", line)
+                self.properties.obsolete_replacement = m.group(1).strip() if m else ""
             elif line.startswith('\\url-object'):
                 self.properties.hasUrl = True
             elif line.startswith(tag := '\\min-fields'):
