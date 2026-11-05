@@ -1209,3 +1209,75 @@ def test_idf_object_str_format_compact_schedule_until_last_field():
         make_idd_object(SCHEDULE_COMPACT_IDD), "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,Until: 24:00;"
     )
     assert str(obj).splitlines()[-1] == "  Until: 24:00;            !- Field 3"
+
+
+# ---------------------------------------------------------------------------
+# \format FluidProperty and Spectral: the data fields (named with a number) several per line, without comments, like
+# EnergyPlus' Transition writes them
+# ---------------------------------------------------------------------------
+
+FLUID_TEMPERATURES_IDD = (
+    "FluidProperties:Temperatures,\n       \\format FluidProperty\n  A1 , \\field Name\n"
+    + "".join(f"  N{i} {';' if i == 9 else ','} \\field Temperature {i}\n       \\units C\n" for i in range(1, 10))
+)
+
+SPECTRAL_IDD = "MaterialProperty:GlazingSpectralData,\n       \\format Spectral\n  A1 , \\field Name\n" + "".join(
+    f"  N{4 * (g - 1) + i} {';' if g == 2 and i == 4 else ','} \\field {name} {g}\n"
+    for g in (1, 2)
+    for i, name in enumerate(["Wavelength", "Transmittance", "Front Reflectance", "Back Reflectance"], start=1)
+)
+
+
+def test_idf_object_str_format_fluid_property():
+    """7 values per line, the last line has what's left."""
+    obj = IdfObject.load(make_idd_object(FLUID_TEMPERATURES_IDD), "FluidProperties:Temperatures,T,1,2,3,4,5,6,7,8,9;")
+    assert str(obj) == "\n".join(
+        [
+            "FluidProperties:Temperatures,",
+            "  T,                       !- Name",
+            "  1.0,2.0,3.0,4.0,5.0,6.0,7.0,",
+            "  8.0,9.0;",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_spectral():
+    """4 values per line: wavelength, transmittance, front and back reflectance."""
+    obj = IdfObject.load(
+        make_idd_object(SPECTRAL_IDD), "MaterialProperty:GlazingSpectralData,S,0.3,0,0.045,0.045,0.31,0,0.044,0.044;"
+    )
+    assert str(obj) == "\n".join(
+        [
+            "MaterialProperty:GlazingSpectralData,",
+            "  S,                       !- Name",
+            "  0.3,0.0,0.045,0.045,",
+            "  0.31,0.0,0.044,0.044;",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_values_per_line_custom_comment_on_last_value_is_kept():
+    """A custom comment ends up on the last field of the line: it's kept on the line of values."""
+    obj = IdfObject.load(
+        make_idd_object(SPECTRAL_IDD),
+        "MaterialProperty:GlazingSpectralData,S,\n  0.3,0,0.045,0.045,  ! UV\n  0.31,0,0.044,0.044;\n",
+    )
+    assert str(obj).splitlines()[2:4] == ["  0.3,0.0,0.045,0.045,  ! UV", "  0.31,0.0,0.044,0.044;"]
+
+
+def test_idf_object_str_format_values_per_line_custom_comment_inside_keeps_one_field_per_line():
+    """It can't be on the line of values without being moved: those values are written one per line, the next ones
+    still several per line."""
+    obj = IdfObject.load(
+        make_idd_object(SPECTRAL_IDD),
+        "MaterialProperty:GlazingSpectralData,S,\n  0.3,  ! UV\n  0,0.045,0.045,\n  0.31,0,0.044,0.044;\n",
+    )
+    assert str(obj).splitlines()[2:7] == [
+        "  0.3,                     ! UV",
+        "  0.0,                     !- Transmittance 1",
+        "  0.045,                   !- Front Reflectance 1",
+        "  0.045,                   !- Back Reflectance 1",
+        "  0.31,0.0,0.044,0.044;",
+    ]

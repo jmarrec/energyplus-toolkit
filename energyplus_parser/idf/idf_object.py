@@ -93,6 +93,41 @@ def _compact_schedule_format_lines(entries: list[FieldToWrite]) -> list[str]:
     return lines
 
 
+# \\format with several values per line, without comments, like EnergyPlus' Transition writes them.
+# Not ViewFactor (ZoneProperty:UserViewFactors:BySurfaceName): EnergyPlus' only file has it one field per line, with
+# comments, and a line of two surface names and a view factor without a comment would be hard to read
+_VALUES_PER_LINE = {IddObjectFormat.FluidProperty: 7, IddObjectFormat.Spectral: 4}
+
+# A data field of those objects: its name ends with a number ("Temperature 3", "Property Value 3", "Wavelength 5")
+_NUMBERED_FIELD_RE = re.compile(r"[0-9]+$")
+
+
+def _values_per_line_format_lines(entries: list[FieldToWrite], per_line: int) -> list[str]:
+    """\\format FluidProperty and Spectral: the data fields ``per_line`` values per line, without comments
+    ("0.300,0.000,0.045,0.045,"), the other fields (name, property type...) one per line."""
+    last_field = entries[-1].field
+    indent = " " * (idf_constants.IDF_LEADING + idf_constants.IDF_INDENT)
+    lines: list[str] = []
+    # groupby only groups CONSECUTIVE entries with the same key: the fields before the data, then the data
+    for is_data, group in itertools.groupby(entries, key=lambda entry: bool(_NUMBERED_FIELD_RE.search(entry.name))):
+        group_entries = list(group)
+        if not is_data:
+            lines.extend(e.field.text(is_last_field=e.field is last_field, field_name=e.name) for e in group_entries)
+            continue
+        for start in range(0, len(group_entries), per_line):
+            chunk = group_entries[start : start + per_line]
+            fields = [entry.field for entry in chunk]
+            # A custom comment ends up on the last field of a line: only that one can be kept on a line of values
+            if any(f.comment is not None for f in fields[:-1]):
+                lines.extend(e.field.text(is_last_field=e.field is last_field, field_name=e.name) for e in chunk)
+                continue
+            line = indent + ",".join(f.value_text() for f in fields) + (";" if fields[-1] is last_field else ",")
+            if fields[-1].comment is not None:
+                line += f"  ! {fields[-1].comment}"
+            lines.append(line)
+    return lines
+
+
 class IdfObjectError(ValueError):
     pass
 
@@ -457,6 +492,10 @@ class IdfObject:
                 lines.extend(_vertices_format_lines(entries))
             elif self.idd_object.properties.format == IddObjectFormat.CompactSchedule:
                 lines.extend(_compact_schedule_format_lines(entries))
+            elif self.idd_object.properties.format in _VALUES_PER_LINE:
+                lines.extend(
+                    _values_per_line_format_lines(entries, _VALUES_PER_LINE[self.idd_object.properties.format])
+                )
             else:
                 for i, (field, name) in enumerate(entries):
                     lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))
