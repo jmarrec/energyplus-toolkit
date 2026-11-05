@@ -1,9 +1,11 @@
 import logging
+import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
 
 from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE
 from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
+from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_constants import format_idf_field
 
 LOG = logging.getLogger("IdfField")
@@ -30,7 +32,9 @@ class IdfField(ABC):
 
     @property
     def required(self):
-        return self.idd_field.properties.required
+        # A field with a default can be left blank, even if the IDD says it's \required-field
+        props = self.idd_field.properties
+        return props.required and not props.stringDefault
 
     @staticmethod
     def from_idd_field(idd_field) -> "IdfField":
@@ -44,7 +48,10 @@ class IdfField(ABC):
         elif field_type == IddFieldType.RealType:
             field = RealField(idd_field=idd_field)
         elif field_type == IddFieldType.ChoiceType:
-            field = ChoiceField(idd_field=idd_field)
+            if (idd_field.objectName.lower(), idd_field.name.lower()) == ("schedule:week:compact", "daytype list"):
+                field = DayTypeListField(idd_field=idd_field)
+            else:
+                field = ChoiceField(idd_field=idd_field)
         elif field_type == IddFieldType.NodeType:
             field = NodeField(idd_field=idd_field)
         elif field_type == IddFieldType.ObjectListType:
@@ -84,13 +91,17 @@ class IdfField(ABC):
             raise FieldValidationError("Cannot reset a required field with no default value")
         self._value = None
 
-    def text(self, is_last_field: bool = False) -> str:
+    def value_text(self) -> str:
+        """The value as written in the IDF ("" if the field is empty)."""
         v = self.value(return_default=False)
-        val = str(v) if v is not None else ""
+        return "" if v is None else str(v)
+
+    def text(self, is_last_field: bool = False, field_name: str | None = None) -> str:
+        """The field's IDF line. ``field_name`` (for the ``!-`` comment) defaults to the IDD field name."""
         return format_idf_field(
-            value=val,
+            value=self.value_text(),
             is_last_field=is_last_field,
-            field_name=self.idd_field.name,
+            field_name=self.idd_field.name if field_name is None else field_name,
             comment=self.comment,
             units=self.idd_field.properties.units,
         )
@@ -112,6 +123,38 @@ class AlphaField(IdfField):
 
     def validate(self):
         super().validate()
+
+
+class DayTypeListField(AlphaField):
+    """Schedule:Week:Compact "DayType List": a choice field in the IDD, but EnergyPlus takes any text containing at
+    least one day type, eg "For: Weekdays Holiday" (ScheduleManager.cc ProcessForDayTypes, and its schema generator
+    drops the keys). It's kept as written."""
+
+    # What ProcessForDayTypes searches for, in the upper-cased value
+    DAY_TYPES = (
+        "WEEKDAY",
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "WEEKEND",
+        "SATURDAY",
+        "SUNDAY",
+        "CUSTOMDAY1",
+        "CUSTOMDAY2",
+        "ALLDAY",
+        "HOLIDAY",
+        "SUMMER",
+        "WINTER",
+        "ALLOTHERDAY",
+    )
+
+    def setString(self, value: str):
+        v = value.strip()
+        if v and not any(day in v.upper() for day in self.DAY_TYPES):
+            raise FieldValidationError(f"Field '{self.idd_field.name}' - No valid day type in: {v}")
+        self._value = v
 
 
 class NumericField(IdfField):
@@ -262,6 +305,9 @@ class IntegerField(NumericField):
     def setInt(self, value: int) -> None:
         if not isinstance(value, (float, int)):
             raise TypeError("IntegerField value must be an int")
+        # Accept a float with no fractional part, eg 512.0, but don't truncate 512.5
+        if isinstance(value, float) and not value.is_integer():  # also False for nan and inf
+            raise FieldValidationError(f"Invalid integer: {value}")
         v = int(value)
         self._validate_range(value=v)
         self._value = v
@@ -269,16 +315,34 @@ class IntegerField(NumericField):
 
     @classmethod
     def _parse_number(cls, value: str) -> int:
+        """Parse an integer, also accepting a float with no fractional part, eg "512.0".
+
+        Anything else is invalid. This is stricter than EnergyPlus, which rounds any number (2.1 -> 2).
+        """
+        if "_" in value:  # Python's int() and float() accept "1_000", IDF doesn't
+            raise FieldValidationError(f"Invalid integer: {value}")
         try:
             return int(value)
         except ValueError:
+            pass
+        try:
+            as_float = float(value)
+        except ValueError:
+            raise FieldValidationError(f"Invalid integer: {value}") from None
+        if not as_float.is_integer():  # also False for nan and inf
             raise FieldValidationError(f"Invalid integer: {value}")
+        return int(as_float)
 
 
 class RealField(NumericField):
     def __init__(self, idd_field: IddField) -> None:
         super().__init__(idd_field=idd_field)
         self._value: float | None = None
+        self._written_as_integer = False  # set by setString, see idf_constants.IDF_KEEP_INTEGER_REALS
+
+    def setString(self, value: str):
+        super().setString(value)
+        self._written_as_integer = self._value is not None and re.fullmatch(r"[+-]?\d+", value.strip()) is not None
 
     def setDouble(self, value: float) -> None:
         if not isinstance(value, (float, int)):
@@ -287,6 +351,17 @@ class RealField(NumericField):
         self._validate_range(value=v)
         self._value = v
         self._mode = NumericMode.NORMAL
+        self._written_as_integer = False
+
+    def value_text(self) -> str:
+        v = self.value(return_default=False)
+        keep_integer = (
+            idf_constants.IDF_KEEP_INTEGER_REALS
+            or self.idd_field.name.lower() in idf_constants.IDF_KEEP_INTEGER_REALS_FIELDS
+        )
+        if keep_integer and self._written_as_integer and isinstance(v, float):
+            return str(int(v))
+        return super().value_text()
 
     @classmethod
     def _parse_number(cls, value: str) -> float:

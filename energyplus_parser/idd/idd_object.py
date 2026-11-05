@@ -1,12 +1,37 @@
 import logging
 import math
+import re
+from enum import StrEnum
 
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import IddField
-from energyplus_parser.idd.idd_regex import RE_FIELD_START, RE_NUMBER_AND_PRECEDING_SPACE
+from energyplus_parser.idd.idd_regex import RE_FIELD_START
 
 LOG = logging.getLogger("IddObject")
 LOG.setLevel(logging.INFO)
+
+
+class IddObjectFormat(StrEnum):
+    """\\format: how IDF Editor writes the object, with its "special format" option.
+
+    The values are spelled as in the IDD, which isn't always as in its documentation ("compactSchedule", not
+    "CompactSchedule", "FluidProperty", not "FluidProperties", "ViewFactor", not "ViewFactors").
+    """
+
+    SingleLine = "singleLine"  # all the fields on one line
+    Vertices = "vertices"  # X, Y and Z of a vertex on one line
+    CompactSchedule = "compactSchedule"
+    FluidProperty = "FluidProperty"  # ten values per line
+    ViewFactor = "ViewFactor"  # three fields per line
+    Spectral = "Spectral"  # four fields per line
+
+    @classmethod
+    def parse(cls, text: str) -> "IddObjectFormat":
+        """Case insensitive. Raises ValueError for an unknown format."""
+        for member in cls:
+            if member.value.lower() == text.lower():
+                return member
+        raise ValueError(f"Unknown \\format '{text}', expected one of: {', '.join(m.value for m in cls)}")
 
 
 class IddObjectProperties:
@@ -22,6 +47,7 @@ class IddObjectProperties:
 
         # True if this object is obsolete.
         self.obsolete: bool = False
+        self.obsolete_replacement: str = ""
 
         # Returns true if this object contains an IddField of type url.
         self.hasUrl: bool = False
@@ -34,9 +60,9 @@ class IddObjectProperties:
         # Returns the minimum number of extensible groups an IdfObject following this schema must have to be valid.
         self.numExtensibleGroupsRequired: int = 0
 
-        # Formatting markup for this object. Often empty. Contains suggestions for printing certain
-        # types of IdfObjects. For instance, many geometric objects have \\format vertices.
-        self.format: str = ""
+        # Formatting markup for this object, None if it has none. Suggests how to print certain types of IdfObjects.
+        # For instance, many geometric objects have \\format vertices.
+        self.format: IddObjectFormat | None = None
 
         # Minimum number of fields required for an IdfObject to be valid according to this schema.
         self.minFields: int = 0
@@ -48,29 +74,46 @@ class IddObjectProperties:
     def __str__(self) -> str:
         lines = []
 
+        # Most important properties first
+        if self.obsolete:
+            replacement = f" New=>{self.obsolete_replacement}" if self.obsolete_replacement else ""
+            lines.append(f"{BLOCK_INDENT}\\obsolete{replacement}")
+        if self.unique:
+            lines.append(f"{BLOCK_INDENT}\\unique-object")
+        if self.required:
+            lines.append(f"{BLOCK_INDENT}\\required-object")
+        if self.hasUrl:
+            lines.append(f"{BLOCK_INDENT}\\url-object")
+
         # Memo lines
         if self.memo:
             for line in self.memo.splitlines():
                 lines.append(f"{BLOCK_INDENT}\\memo {line}")
 
-        if self.unique:
-            lines.append(f"{BLOCK_INDENT}\\unique-object")
-        if self.required:
-            lines.append(f"{BLOCK_INDENT}\\required-object")
-        if self.obsolete:
-            lines.append(f"{BLOCK_INDENT}\\obsolete")
-        if self.hasUrl:
-            lines.append(f"{BLOCK_INDENT}\\url-object")
+        # Object field layout and formatting properties
         if self.extensible:
             lines.append(f"{BLOCK_INDENT}\\extensible:{self.numExtensible}")
-        if self.format:
-            lines.append(f"{BLOCK_INDENT}\\format {self.format}")
         if self.minFields > 0:
             lines.append(f"{BLOCK_INDENT}\\min-fields {self.minFields}")
         if self.maxFields is not None:
             lines.append(f"{BLOCK_INDENT}\\max-fields {self.maxFields}")
 
+        if self.format is not None:
+            lines.append(f"{BLOCK_INDENT}\\format {self.format.value}")
+
         return "\n".join(lines)
+
+
+def _compact_field_lines(fields: list[IddField], per_line: int = 10) -> list[str]:
+    """Write fields declared without a name as compact lines: "  N1, N2, N3,  \\note ..." (";" after the last one)."""
+    lines = []
+    for i in range(0, len(fields), per_line):
+        chunk = fields[i : i + per_line]
+        ids = " ".join(f"{f.field_id}{';' if f.is_last_field else ','}" for f in chunk)
+        notes = {f.properties.note for f in chunk}
+        note = notes.pop() if len(notes) == 1 else ""
+        lines.append(f"  {ids}  \\note {note}" if note else f"  {ids}")
+    return lines
 
 
 class IddObject:
@@ -128,6 +171,12 @@ class IddObject:
                 self.properties.required = True
             elif line.startswith('\\obsolete'):
                 self.properties.obsolete = True
+                # usage, if a replacement is available:
+                #       \obsolete New=>[New object name]
+                #   usage, if no replacement is available:
+                #       \obsolete New=>deleted
+                m = re.match(r"\\obsolete\s*(?:New=>)?(.*)", line)
+                self.properties.obsolete_replacement = m.group(1).strip() if m else ""
             elif line.startswith('\\url-object'):
                 self.properties.hasUrl = True
             elif line.startswith(tag := '\\min-fields'):
@@ -141,8 +190,10 @@ class IddObject:
                 self.properties.extensible = True
                 self.properties.numExtensible = int(num_extensible_str)
             elif line.startswith(tag := '\\format'):
-                format_text = line[len(tag) :].strip()
-                self.properties.format = format_text
+                try:
+                    self.properties.format = IddObjectFormat.parse(line[len(tag) :].strip())
+                except ValueError as exc:
+                    raise ValueError(f"{exc} in object '{self.name}'") from None
             elif has_fields and line.startswith('A') or line.startswith('N'):
                 found_fields_start = True
                 break
@@ -156,10 +207,11 @@ class IddObject:
 
         start_index = line_number - 1
         expanded_lines = []
+        unnamed_ids: set[str] = set()  # fields declared without a \field name, eg "N1, N2, N3,  \note ..."
         for line in object_lines[start_index:]:
             matches = list(RE_FIELD_START.finditer(line))
             self._original_number_of_fields += len(matches)
-            if len(matches) <= 1:
+            if len(matches) == 0 or (len(matches) == 1 and "\\field" in line):
                 expanded_lines.append(line)
                 continue
 
@@ -170,6 +222,7 @@ class IddObject:
             # Split multi-field lines: keep only field ids, ignore tail like \note ...
             for match in matches:
                 field_id = line[match.start() : match.end()].strip()  # drop trailing comma/semicolon
+                unnamed_ids.add(field_id[:-1].strip())
                 expanded_lines.append(f"{field_id} \\field {field_id[:-1]}")
                 expanded_lines.append(tail)
 
@@ -183,23 +236,7 @@ class IddObject:
                 end_index = line_number
                 field_lines = object_lines[start_index:end_index]
                 field = IddField.load(objectName=self.name, field_lines=field_lines)
-
-                if field.properties.beginExtensible:
-                    if found_begin_extensible:
-                        raise ValueError(f"Multiple begin-extensible fields found in object '{self.name}'")
-                    if self.properties.extensible:
-                        found_begin_extensible = True
-                    else:
-                        raise ValueError(
-                            f"Begin-extensible field found in non-extensible object "
-                            f"'{self.name}' for field '{field.name}'"
-                        )
-                if found_begin_extensible:
-                    # Remove number from field name
-                    field.name = RE_NUMBER_AND_PRECEDING_SPACE.sub("", field.name, count=1).strip()
-                    self.extensible_fields.append(field)
-                else:
-                    self.fields.append(field)
+                found_begin_extensible = self._add_field(field, found_begin_extensible)
                 start_index = line_number
 
             if found_begin_extensible and len(self.extensible_fields) == self.properties.numExtensible:
@@ -214,10 +251,13 @@ class IddObject:
         if start_index < n_lines:
             field_lines = object_lines[start_index:]
             field = IddField.load(objectName=self.name, field_lines=field_lines)
-            if found_begin_extensible:
-                self.extensible_fields.append(field)
-            else:
-                self.fields.append(field)
+            self._add_field(field, found_begin_extensible)
+
+        for field in self.fields + self.extensible_fields:
+            field.unnamed = field.field_id in unnamed_ids
+
+        for field in self.extensible_fields:
+            field.markExtensible()
 
         # Calculate extensible groups required
         if self.properties.extensible:
@@ -226,6 +266,25 @@ class IddObject:
                     numerator = self.properties.minFields - len(self.fields)
                     denominator = self.properties.numExtensible
                     self.properties.numExtensibleGroupsRequired = math.ceil(numerator / denominator)
+
+    def _add_field(self, field: IddField, found_begin_extensible: bool) -> bool:
+        """Add a parsed field to the regular or the extensible fields.
+
+        Returns whether the extensible group has started, with this field's \\begin-extensible or before it.
+        """
+        if field.properties.beginExtensible:
+            if found_begin_extensible:
+                raise ValueError(f"Multiple begin-extensible fields found in object '{self.name}'")
+            if not self.properties.extensible:
+                raise ValueError(
+                    f"Begin-extensible field found in non-extensible object '{self.name}' for field '{field.name}'"
+                )
+            found_begin_extensible = True
+        if found_begin_extensible:
+            self.extensible_fields.append(field)
+        else:
+            self.fields.append(field)
+        return found_begin_extensible
 
     def __repr__(self) -> str:
         return self.name
@@ -259,9 +318,16 @@ class IddObject:
             lines.append(f"{self.name},")
             lines.append(str(self.properties))
 
-            # print regular fields
-            for i, field in enumerate(self.fields):
-                lines.append(str(field))
+            # print regular fields, writing back the ones declared without a name compactly, as they were
+            unnamed_run: list[IddField] = []
+            for field in self.fields + [None]:  # type: ignore[list-item]
+                if field is not None and field.unnamed:
+                    unnamed_run.append(field)
+                    continue
+                lines.extend(_compact_field_lines(unnamed_run))
+                unnamed_run = []
+                if field is not None:
+                    lines.append(str(field))
 
             # print extensible fields
             for i, field in enumerate(self.extensible_fields):
@@ -284,10 +350,14 @@ class IddObject:
                         f"with current fields {num_fields} and extensible group size {denominator}"
                     )
                 extra_groups = int(numerator / denominator)
+                # A and N fields are numbered separately: each group advances by its number of fields of that letter
+                per_letter = {
+                    letter: sum(1 for f in self.extensible_fields if f.field_id[0] == letter) for letter in "AN"
+                }
                 extra_field_ids = []
                 for i in range(extra_groups):
                     for field in self.extensible_fields:
-                        field_num = int(field.field_id[1:]) + i + 1
+                        field_num = int(field.field_id[1:]) + (i + 1) * per_letter[field.field_id[0]]
                         field_id = f"{field.field_id[0]}{field_num}".ljust(
                             4 if self._original_number_of_fields > 100 else 3
                         )

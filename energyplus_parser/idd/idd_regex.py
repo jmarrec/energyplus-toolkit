@@ -53,7 +53,9 @@ RE_BEGIN_EXTENSIBLE = re.compile(r"[\\][bB]egin-[eE]xtensible")
 RE_BEGIN_EXTENSIBLE_PROPERTY = re.compile(r"^[bB]egin-[eE]xtensible")
 RE_METADATA_COMMENT = re.compile(r"^[\s\t]*?[\\]([^\\]*)(.*)")
 RE_VERSION_OBJECT_NAME = re.compile(r".*[vV]ersion.*")
-RE_NUMBER_AND_PRECEDING_SPACE = re.compile(r"\s?[0-9]+")
+# The group number in an extensible field name: the last standalone number, eg "1" in "Vertex 1 X-coordinate" or in
+# "2017 Speed 1 Rated Evaporator Fan Power Per Volume Flow Rate"
+RE_GROUP_NUMBER = re.compile(r"\b[0-9]+\b(?!.*\b[0-9]+\b)")
 
 #######################################################################################################################
 #                                             C O M M E N T    R E G E X                                              #

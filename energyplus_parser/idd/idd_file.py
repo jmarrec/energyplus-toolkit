@@ -177,4 +177,6 @@ class IddFile:
                 lines.append(f"\\group {current_group}\n")
             lines.append(str(obj))
 
-        return "\n".join(lines) + "\n"
+        # Each object ends with a blank line: not the file, which ends with exactly one newline (as pre-commit's
+        # end-of-file-fixer wants it)
+        return "\n".join(lines).rstrip("\n") + "\n"

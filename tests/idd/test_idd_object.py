@@ -1,5 +1,7 @@
+import pytest
+
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_object import IddObject, IddObjectProperties
+from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat, IddObjectProperties
 
 
 def test_idd_object_properties() -> None:
@@ -13,14 +15,14 @@ def test_idd_object_properties() -> None:
     obj_props.extensible = True
     obj_props.numExtensible = 2
     obj_props.numExtensibleGroupsRequired = 1
-    obj_props.format = ""
+    obj_props.format = None
     obj_props.minFields = 5
     obj_props.maxFields = 10
     expected = "\n".join(
         [
-            f'{BLOCK_INDENT}\\memo This is a test memo.',
             f'{BLOCK_INDENT}\\unique-object',
             f'{BLOCK_INDENT}\\required-object',
+            f'{BLOCK_INDENT}\\memo This is a test memo.',
             f'{BLOCK_INDENT}\\extensible:2',
             f'{BLOCK_INDENT}\\min-fields 5',
             f'{BLOCK_INDENT}\\max-fields 10',
@@ -33,12 +35,12 @@ def test_parse_idd_object_required_unique() -> None:
     name = "Building"
     group = "Simulation Parameters"
     ori_text = r"""Building,
+       \unique-object
+       \required-object
        \memo Describes parameters that are used during the simulation
        \memo of the building. There are necessary correlations between the entries for
        \memo this object and some entries in the Site:WeatherStation and
        \memo Site:HeightVariation objects, specifically the Terrain field.
-       \unique-object
-       \required-object
        \min-fields 8
   A1 , \field Name
        \type alpha
@@ -132,7 +134,7 @@ def test_parse_idd_object_required_unique() -> None:
     assert obj_props.required
     assert not obj_props.obsolete
     assert not obj_props.hasUrl
-    assert obj_props.format == ""
+    assert obj_props.format is None
 
     assert not obj_props.extensible
     assert obj_props.numExtensible == 0
@@ -161,8 +163,8 @@ def test_parse_idd_object_with_one_extensible() -> None:
        \key Solar
        \key Visible
   N1 , \field Wavelength
-       \type real
        \begin-extensible
+       \type real
        \units micron
   N2 ; \field Spectrum
        \type real
@@ -190,7 +192,7 @@ def test_parse_idd_object_with_one_extensible() -> None:
     assert not obj_props.required
     assert not obj_props.obsolete
     assert not obj_props.hasUrl
-    assert obj_props.format == ""
+    assert obj_props.format is None
 
     assert obj_props.extensible
     assert obj_props.numExtensible == 2
@@ -261,8 +263,11 @@ def test_parse_idd_object_with_extra_extensible_fields() -> None:
         "Spectrum 2",
     ]
     assert len(idd_obj.extensible_fields) == 2
-    assert idd_obj.extensible_fields[0].name == "Wavelength"
-    assert idd_obj.extensible_fields[1].name == "Spectrum"
+    # The name has no group number. The first extensible group is the 3rd one: the first 2 are regular fields, so the
+    # groups are numbered from 3
+    assert [x.name for x in idd_obj.extensible_fields] == ["Wavelength", "Spectrum"]
+    assert [x.name_for_group(0) for x in idd_obj.extensible_fields] == ["Wavelength 3", "Spectrum 3"]
+    assert [x.name_for_group(1) for x in idd_obj.extensible_fields] == ["Wavelength 4", "Spectrum 4"]
 
 
 def test_parse_idd_object_weird_ground():
@@ -281,132 +286,75 @@ def test_parse_idd_object_weird_ground():
     assert idd_obj.group == group
     assert len(idd_obj.fields) == 40
 
+    # Fields declared without names are written back compactly, still without names (no made-up "\\field N1")
     expected_str = r"""GroundHeatTransfer:Slab:XFACE,
        \memo This is only needed when using manual gridding (not recommended)
        \memo XFACE: X Direction cell face coordinates: m
-  N1 , \field N1
-       \note fields as indicated
-       \type real
-  N2 , \field N2
-       \note fields as indicated
-       \type real
-  N3 , \field N3
-       \note fields as indicated
-       \type real
-  N4 , \field N4
-       \note fields as indicated
-       \type real
-  N5 , \field N5
-       \note fields as indicated
-       \type real
-  N6 , \field N6
-       \note fields as indicated
-       \type real
-  N7 , \field N7
-       \note fields as indicated
-       \type real
-  N8 , \field N8
-       \note fields as indicated
-       \type real
-  N9 , \field N9
-       \note fields as indicated
-       \type real
-  N10, \field N10
-       \note fields as indicated
-       \type real
-  N11, \field N11
-       \note fields as indicated
-       \type real
-  N12, \field N12
-       \note fields as indicated
-       \type real
-  N13, \field N13
-       \note fields as indicated
-       \type real
-  N14, \field N14
-       \note fields as indicated
-       \type real
-  N15, \field N15
-       \note fields as indicated
-       \type real
-  N16, \field N16
-       \note fields as indicated
-       \type real
-  N17, \field N17
-       \note fields as indicated
-       \type real
-  N18, \field N18
-       \note fields as indicated
-       \type real
-  N19, \field N19
-       \note fields as indicated
-       \type real
-  N20, \field N20
-       \note fields as indicated
-       \type real
-  N21, \field N21
-       \note fields as indicated
-       \type real
-  N22, \field N22
-       \note fields as indicated
-       \type real
-  N23, \field N23
-       \note fields as indicated
-       \type real
-  N24, \field N24
-       \note fields as indicated
-       \type real
-  N25, \field N25
-       \note fields as indicated
-       \type real
-  N26, \field N26
-       \note fields as indicated
-       \type real
-  N27, \field N27
-       \note fields as indicated
-       \type real
-  N28, \field N28
-       \note fields as indicated
-       \type real
-  N29, \field N29
-       \note fields as indicated
-       \type real
-  N30, \field N30
-       \note fields as indicated
-       \type real
-  N31, \field N31
-       \note fields as indicated
-       \type real
-  N32, \field N32
-       \note fields as indicated
-       \type real
-  N33, \field N33
-       \note fields as indicated
-       \type real
-  N34, \field N34
-       \note fields as indicated
-       \type real
-  N35, \field N35
-       \note fields as indicated
-       \type real
-  N36, \field N36
-       \note fields as indicated
-       \type real
-  N37, \field N37
-       \note fields as indicated
-       \type real
-  N38, \field N38
-       \note fields as indicated
-       \type real
-  N39, \field N39
-       \note fields as indicated
-       \type real
-  N40; \field N40
-       \note fields as indicated
-       \type real
+  N1, N2, N3, N4, N5, N6, N7, N8, N9, N10,  \note fields as indicated
+  N11, N12, N13, N14, N15, N16, N17, N18, N19, N20,  \note fields as indicated
+  N21, N22, N23, N24, N25, N26, N27, N28, N29, N30,  \note fields as indicated
+  N31, N32, N33, N34, N35, N36, N37, N38, N39, N40;  \note fields as indicated
 """
 
     assert str(idd_obj) == expected_str
+
+
+def assert_field_ids_consecutive(idd_text: str, expected_last: dict[str, int]) -> None:
+    """Every A / N field id is written once, numbered 1, 2, 3... separately for A and N."""
+    import re
+
+    for letter, last in expected_last.items():
+        ids = [int(m) for m in re.findall(rf"\b{letter}(\d+)\s*[,;]", idd_text)]
+        assert ids == list(range(1, last + 1)), f"{letter} fields: {ids}"
+
+
+def test_extra_extensible_fields_numbering_with_two_fields_per_group() -> None:
+    """Site:SpectrumData: the extra fields of a 2-field group (Wavelength, Spectrum) are N7, N8, N9... not N6, N7, N7..."""
+    ori_text = r"""Site:SpectrumData,
+       \min-fields 8
+       \extensible:2
+  A1 , \field Name
+       \required-field
+       \type alpha
+  A2 , \field Spectrum Data Type
+       \required-field
+       \type choice
+       \key Solar
+       \key Visible
+  N1 , \field Wavelength 1
+       \type real
+  N2 , \field Spectrum 1
+       \type real
+  N3 , \field Wavelength 2
+       \begin-extensible
+       \type real
+  N4 , \field Spectrum 2
+       \type real
+  N5 , N6,       \note fields as indicated
+  N7 , N8,       \note fields as indicated
+  N9 , N10;      \note fields as indicated
+"""
+    idd_obj = IddObject.load(group="Simulation Parameters", object_lines=ori_text.splitlines())
+    assert idd_obj._original_number_of_fields == 12
+    assert_field_ids_consecutive(str(idd_obj), {"A": 2, "N": 10})
+
+
+def test_extra_extensible_fields_numbering_with_mixed_group() -> None:
+    """A group (A, N): the next groups are A3, N2 then A4, N3, each letter numbered on its own."""
+    ori_text = r"""Some:Object,
+       \extensible:2
+  A1 , \field Name
+       \type alpha
+  A2 , \field Thing 1 Name
+       \begin-extensible
+       \type alpha
+  N1 , \field Thing 1 Value
+       \type real
+  A3 , N2 , A4 , N3;
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    assert idd_obj._original_number_of_fields == 7
+    assert_field_ids_consecutive(str(idd_obj), {"A": 4, "N": 3})
 
 
 def test_parse_idd_preserve_useless_fields_to_please_idfeditor():
@@ -421,8 +369,8 @@ def test_parse_idd_preserve_useless_fields_to_please_idfeditor():
   A2 , \field Inlet Node Name
        \type node
   A3 , \field Outlet Node Name
-       \type node
        \begin-extensible
+       \type node
   A4  , A5  , A6  , A7  , A8  , A9  , A10 , A11 , A12 , A13 ,
   A14 , A15 , A16 , A17 , A18 , A19 , A20 , A21 , A22 , A23 ,
   A24 , A25 , A26 , A27 , A28 , A29 , A30 , A31 , A32 , A33 ,
@@ -517,3 +465,124 @@ SimulationControl,
 """
     idd_obj = IddObject.load(group=group, object_lines=ori_text.splitlines())
     assert idd_obj.name_field_index() is None
+
+
+@pytest.mark.parametrize(
+    "obsolete_line, replacement",
+    [
+        (r"\obsolete New=>deleted", "deleted"),
+        (r"\obsolete New=>Some:Other:Object", "Some:Other:Object"),
+        (r"\obsolete", ""),
+    ],
+)
+def test_parse_idd_object_obsolete(obsolete_line, replacement) -> None:
+    """Daylighting:DELight:ComplexFenestration: the replacement after \\obsolete must be kept, EnergyPlus' schema
+    generator requires it ("expected string after /obsolete")"""
+    ori_text = rf"""Daylighting:DELight:ComplexFenestration,
+       \memo Used for DElight Complex Fenestration of all types
+       {obsolete_line}
+       \min-fields 1
+  A1 ; \field Name
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Daylighting", object_lines=ori_text.splitlines())
+    assert idd_obj.properties.obsolete
+    assert idd_obj.properties.obsolete_replacement == replacement
+    assert f"       {obsolete_line}\n" in str(idd_obj)
+
+
+def test_unnamed_compact_fields_written_back_compact() -> None:
+    """GroundHeatTransfer:Basement:XFACE declares its fields without names: they must stay unnamed (no made-up
+    '\\field N1'), otherwise the epJSON schema gets named fields it doesn't have."""
+    ori_text = r"""GroundHeatTransfer:Basement:XFACE,
+    \memo XFACE: X Direction cell face coordinates: m
+       N1, N2, N3,  \note fields as indicated
+       N4, N5;      \note fields as indicated
+"""
+    idd_obj = IddObject.load(group="Detailed Ground Heat Transfer", object_lines=ori_text.splitlines())
+    assert len(idd_obj.fields) == 5
+    text = str(idd_obj)
+    assert "\\field" not in text
+    assert "\\type" not in text
+    assert_field_ids_consecutive(text, {"N": 5})
+    assert text.rstrip().splitlines()[-1].split("\\")[0].strip().endswith("N5;")
+
+
+def test_required_field_with_default_stays_required_in_idd() -> None:
+    """SurfaceProperty:SurroundingSurfaces 'Surrounding Surface View Factor' is \\required-field with a \\default:
+    the IDD must keep it required (it's the IDF side that treats a default as making it optional)."""
+    ori_text = r"""Some:Object,
+  A1 , \field Name
+       \required-field
+       \type alpha
+  N1 ; \field View Factor
+       \required-field
+       \type real
+       \default 0.5
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    assert idd_obj.fields[1].properties.required
+    assert str(idd_obj).count("\\required-field") == 2
+
+
+def test_extensible_field_names_keep_the_group_number() -> None:
+    """Extensible fields are named without the group number, but the IDD's name is written back, and the number is put
+    back where it was for each group: "Vertex 3 X-coordinate", "DayType List 3"."""
+    ori_text = r"""Some:Object,
+       \extensible:2
+  A1 , \field Name
+       \type alpha
+  N1 , \field Vertex 1 X-coordinate
+       \begin-extensible
+       \type real
+  A2 ; \field DayType List 1
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    text = str(idd_obj)
+    assert r"\field Vertex 1 X-coordinate" in text
+    assert r"\field DayType List 1" in text
+    assert text == ori_text
+
+
+@pytest.mark.parametrize("idd_format", list(IddObjectFormat))
+def test_parse_idd_object_format(idd_format) -> None:
+    """\\format is spelled as in the IDD ("compactSchedule", "FluidProperty"...), and written back that way."""
+    ori_text = rf"""Some:Object,
+       \format {idd_format.value}
+  A1 ; \field Name
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    assert idd_obj.properties.format == idd_format
+    assert str(idd_obj) == ori_text
+
+
+def test_parse_idd_object_format_is_case_insensitive() -> None:
+    assert IddObjectFormat.parse("CompactSchedule") == IddObjectFormat.CompactSchedule
+    assert IddObjectFormat.parse("SINGLELINE") == IddObjectFormat.SingleLine
+
+
+@pytest.mark.parametrize("text", ["FluidProperties", "ViewFactors", "Banana"])
+def test_parse_idd_object_unknown_format_is_an_error(text) -> None:
+    """The IDD's documentation says "FluidProperties" and "ViewFactors", but the IDD uses "FluidProperty" and
+    "ViewFactor": only those are accepted."""
+    with pytest.raises(ValueError, match="Unknown \\\\format"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\format {text}", "  A1 ; \\field Name"])
+
+
+def test_parse_idd_object_begin_extensible_on_last_field() -> None:
+    """A one-field extensible group declared last (nothing after it) was taken for a regular field: the last field of an
+    object was added without checking its \\begin-extensible."""
+    ori_text = r"""Schedule:Compact,
+       \extensible:1
+  A1 , \field Name
+       \type alpha
+  A2 ; \field Field 1
+       \begin-extensible
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Schedules", object_lines=ori_text.splitlines())
+    assert [f.name for f in idd_obj.fields] == ["Name"]
+    assert [f.name for f in idd_obj.extensible_fields] == ["Field"]
+    assert str(idd_obj) == ori_text

@@ -1,12 +1,131 @@
+import itertools
 import logging
+import re
+from typing import NamedTuple
 
 from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
-from energyplus_parser.idd.idd_object import IddObject
+from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat
 from energyplus_parser.idf import idf_constants
+from energyplus_parser.idf.idf_constants import format_idf_field
 from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
 
 LOG = logging.getLogger("IdfObject")
 LOG.setLevel(logging.INFO)
+
+
+class FieldToWrite(NamedTuple):
+    """A field, with the name for its "!-" comment: numbered by group for an extensible field
+    ("Vertex 3 X-coordinate")."""
+
+    field: IdfField
+    name: str
+
+
+_VERTEX_FIELD_RE = re.compile(r"Vertex ([0-9]+) ([XYZ])-coordinate", re.IGNORECASE)
+
+
+def _vertex_number(name: str) -> str | None:
+    """The vertex number: "2" for "Vertex 2 X-coordinate", None if it isn't a vertex coordinate (eg Zone's "X Origin").
+
+    Found by name, so it works for extensible vertices (named by group) and for regular ones
+    (FenestrationSurface:Detailed).
+    """
+    m = _VERTEX_FIELD_RE.fullmatch(name)
+    return m.group(1) if m else None
+
+
+def _vertex_line(fields: tuple[IdfField, IdfField, IdfField], vertex: str, is_last_field: bool) -> str:
+    """One vertex on one line, like EnergyPlus' Transition writes it: "0,0,3,  !- X,Y,Z ==> Vertex 1 {m}".
+
+    The comment is always 2 spaces after the values, it isn't aligned on the other fields' comments.
+    """
+    x, _, z = fields
+    indent = " " * (idf_constants.IDF_LEADING + idf_constants.IDF_INDENT)
+    values = ",".join(f.value_text() for f in fields) + (";" if is_last_field else ",")
+    if z.comment is not None:
+        return f"{indent}{values}  ! {z.comment}"
+    units = x.idd_field.properties.units
+    return f"{indent}{values}  !- X,Y,Z ==> Vertex {vertex}" + (f" {{{units}}}" if units else "")
+
+
+def _vertices_format_lines(entries: list[FieldToWrite]) -> list[str]:
+    """\\format vertices: the X, Y and Z of a vertex on one line, the other fields one per line."""
+    last_field = entries[-1].field
+    lines = []
+    # groupby only groups CONSECUTIVE entries with the same key (unlike pandas), so the order is kept: the regular
+    # fields before, between and after the vertices each make their own group (key None), and each vertex its own
+    for vertex, group in itertools.groupby(entries, key=lambda entry: _vertex_number(entry.name)):
+        group_entries = list(group)
+        fields = tuple(entry.field for entry in group_entries)
+        # A custom comment ends up on the last field of a line: only Z's can be kept on the vertex line
+        if vertex is not None and len(fields) == 3 and all(f.comment is None for f in fields[:2]):
+            lines.append(_vertex_line(fields, vertex, is_last_field=fields[-1] is last_field))
+        else:
+            lines.extend(f.text(is_last_field=f is last_field, field_name=name) for f, name in group_entries)
+    return lines
+
+
+def _compact_schedule_format_lines(entries: list[FieldToWrite]) -> list[str]:
+    """\\format compactSchedule: an "Until: HH:MM" field shares its line with the value after it, like EnergyPlus'
+    Transition writes it: "Until: 24:00,1.0,  !- Field 3". The other fields are one per line."""
+    last_field = entries[-1].field
+    lines = []
+    entries_iter = iter(entries)
+    for entry in entries_iter:
+        field = entry.field
+        # A custom comment ends up on the last field of a line: the Until field's can't be kept if the value follows it.
+        # next() only takes the value when the Until field can share its line
+        if (
+            field.value_text().strip().lower().startswith("until")
+            and field.comment is None
+            and (value := next(entries_iter, None)) is not None
+        ):
+            lines.append(
+                format_idf_field(
+                    value=f"{field.value_text()},{value.field.value_text()}",
+                    is_last_field=value.field is last_field,
+                    field_name=entry.name,
+                    comment=value.field.comment,
+                )
+            )
+        else:
+            lines.append(field.text(is_last_field=field is last_field, field_name=entry.name))
+    return lines
+
+
+# \\format with several values per line, without comments, like EnergyPlus' Transition writes them.
+# Not ViewFactor (ZoneProperty:UserViewFactors:BySurfaceName): EnergyPlus' only file has it one field per line, with
+# comments, and a line of two surface names and a view factor without a comment would be hard to read
+_VALUES_PER_LINE = {IddObjectFormat.FluidProperty: 7, IddObjectFormat.Spectral: 4}
+
+# A data field of those objects: its name ends with a number ("Temperature 3", "Property Value 3", "Wavelength 5")
+_NUMBERED_FIELD_RE = re.compile(r"[0-9]+$")
+
+
+def _values_per_line_format_lines(entries: list[FieldToWrite], per_line: int) -> list[str]:
+    """\\format FluidProperty and Spectral: the data fields ``per_line`` values per line, without comments
+    ("0.300,0.000,0.045,0.045,"), the other fields (name, property type...) one per line."""
+    last_field = entries[-1].field
+    indent = " " * (idf_constants.IDF_LEADING + idf_constants.IDF_INDENT)
+    lines: list[str] = []
+    # groupby only groups CONSECUTIVE entries with the same key: the fields before the data, then the data
+    for is_data, group in itertools.groupby(entries, key=lambda entry: bool(_NUMBERED_FIELD_RE.search(entry.name))):
+        group_entries = list(group)
+        if not is_data:
+            lines.extend(e.field.text(is_last_field=e.field is last_field, field_name=e.name) for e in group_entries)
+            continue
+        for start in range(0, len(group_entries), per_line):
+            chunk = group_entries[start : start + per_line]
+            fields = [entry.field for entry in chunk]
+            # A custom comment ends up on the last field of a line: only that one can be kept on a line of values
+            if any(f.comment is not None for f in fields[:-1]):
+                lines.extend(e.field.text(is_last_field=e.field is last_field, field_name=e.name) for e in chunk)
+                continue
+            line = indent + ",".join(f.value_text() for f in fields) + (";" if fields[-1] is last_field else ",")
+            if fields[-1].comment is not None:
+                line += f"  ! {fields[-1].comment}"
+            lines.append(line)
+    return lines
 
 
 class IdfObjectError(ValueError):
@@ -352,22 +471,34 @@ class IdfObject:
 
         indent = " " * idf_constants.IDF_LEADING
 
-        if self.idd_object.properties.format.lower() == "singleline":
-            if not all_fields:
-                lines.append(f"{indent}{self.idd_object.name};")
-            else:
-                vals = [str(f.value(return_default=False) or "") for f in all_fields]
-                # Trim trailing empty fields
-                while len(vals) > 1 and not vals[-1]:
-                    vals.pop()
-                lines.append(f"{indent}{self.idd_object.name},{','.join(vals)};")
-        elif not all_fields:
+        if not all_fields:
             lines.append(f"{indent}{self.idd_object.name};")
+        elif self.idd_object.properties.format == IddObjectFormat.SingleLine:
+            # value_text() is empty only for an empty field: 0 / 0.0 are kept
+            vals = [f.value_text() for f in all_fields]
+            # Trim trailing empty fields
+            while len(vals) > 1 and not vals[-1]:
+                vals.pop()
+            lines.append(f"{indent}{self.idd_object.name},{','.join(vals)};")
         else:
             lines.append(f"{indent}{self.idd_object.name},")
-            for i, field in enumerate(all_fields):
-                is_last = i == len(all_fields) - 1
-                lines.append(field.text(is_last_field=is_last))
+            # Extensible fields are numbered by group, like in the IDD: "Vertex 1 X-coordinate", "Vertex 2 X-coordinate"
+            entries = [FieldToWrite(field=f, name=f.idd_field.name) for f in active_fixed] + [
+                FieldToWrite(field=f, name=f.idd_field.name_for_group(i))
+                for i, group in enumerate(self._extensible_groups)
+                for f in group
+            ]
+            if self.idd_object.properties.format == IddObjectFormat.Vertices:
+                lines.extend(_vertices_format_lines(entries))
+            elif self.idd_object.properties.format == IddObjectFormat.CompactSchedule:
+                lines.extend(_compact_schedule_format_lines(entries))
+            elif self.idd_object.properties.format in _VALUES_PER_LINE:
+                lines.extend(
+                    _values_per_line_format_lines(entries, _VALUES_PER_LINE[self.idd_object.properties.format])
+                )
+            else:
+                for i, (field, name) in enumerate(entries):
+                    lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))
 
         lines.append("")  # blank line at end
         return "\n".join(lines)

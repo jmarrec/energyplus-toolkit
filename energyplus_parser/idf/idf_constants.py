@@ -4,6 +4,13 @@ IDF_LEADING = 0
 IDF_INDENT = 2
 # Column at which the "!-" comment begins (0-based).
 IDF_COMMENT_COLUMN = 27
+# Keep a number written as an integer (eg "8") as an integer in a real field, instead of writing "8.0".
+# EnergyPlus stores "8" as an int and "8.0" as a double, which matters where it reads the field with getIntFieldValue.
+IDF_KEEP_INTEGER_REALS = False
+# Real fields (by IDD field name, case-insensitive) where a number written as an integer is always kept as an integer.
+# "Number of Vertices" is an integer in practice, but can't be \type integer as it's \autocalculatable: EnergyPlus would
+# then parse "4.0" as a double, that the integer type rejects.
+IDF_KEEP_INTEGER_REALS_FIELDS = {"number of vertices"}
 
 
 def format_idf_field(

@@ -9,6 +9,51 @@ from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
 LOG = logging.getLogger("IdfFile")
 
 
+def split_objects_on_one_line(line: str) -> list[str]:
+    """Split a line with several objects into one line per object: "A,1;B,2;  ! c" gives ["A,1;", "B,2;  ! c"].
+
+    That's valid IDF (a ';' ends an object), eg two C++ strings concatenated because of a missing comma in a unit test.
+    A "!" comment stays on the last line, as does the start of an object that continues on the following lines.
+    """
+    data, bang, comment = line.partition("!")
+    pieces = data.split(";")
+    if not "".join(pieces[1:]).strip():  # no ';', or nothing but the comment after the only one
+        return [line]
+    lines = [piece + ";" for piece in pieces[:-1]]
+    tail = pieces[-1]
+    if tail.strip():
+        lines.append(tail + bang + comment)  # the start of the next object
+    else:
+        lines[-1] += tail + bang + comment
+    return lines
+
+
+def find_text_outside_fields(text: str) -> str | None:
+    """Return the first line with text that IdfFile would silently drop, or None.
+
+    IdfFile only keeps what's before a ',' or ';' (and '!' comments): anything after the last one of a line is lost.
+    """
+    for line in text.splitlines():
+        data = line.split("!", 1)[0]
+        if data[max(data.rfind(","), data.rfind(";")) + 1 :].strip():
+            return line.strip()
+    return None
+
+
+def count_idf_objects(text: str) -> int:
+    """Count IDF objects by counting ';' outside of ``!`` comments."""
+    return sum(line.split("!", 1)[0].count(";") for line in text.splitlines())
+
+
+def find_lost_objects(text: str, idf: "IdfFile") -> str | None:
+    """Return why some objects of ``text`` aren't in ``idf`` (eg not in the IDD, so skipped), or None."""
+    expected = count_idf_objects(text)
+    parsed = sum(1 for obj in idf.objects if obj.idd_object.name != COMMENT_ONLY_OBJECT_NAME)
+    if parsed != expected:
+        return f"expected {expected} IDF object(s) but parsed {parsed} (check IDD version)"
+    return None
+
+
 class IdfFileError(Exception):
     pass
 
@@ -61,7 +106,12 @@ class IdfFile:
         in_object = False
         header_set = False
 
-        for raw_line in text.splitlines():
+        # One object per line at most: "Timestep,4;Zone,Z1;" is split in two lines
+        raw_lines: list[str] = []
+        for text_line in text.splitlines():
+            raw_lines.extend(split_objects_on_one_line(text_line))
+
+        for raw_line in raw_lines:
             line = raw_line.strip()
 
             # ---- blank line ----

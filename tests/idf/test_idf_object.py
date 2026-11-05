@@ -1,6 +1,7 @@
 import pytest
 
 from energyplus_parser.idd.idd_object import IddObject
+from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_field import FieldValidationError, NumericMode
 from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
 
@@ -353,6 +354,73 @@ def test_idf_object_set_int_wrong_type():
     obj = IdfObject(idd_object=idd_obj)
     with pytest.raises(TypeError):
         obj.setInt(1, 1)
+
+
+# ---------------------------------------------------------------------------
+# singleLine format: zero values must be kept (0 is falsy, but it's not an empty field)
+# ---------------------------------------------------------------------------
+
+SCHEDULE_CONSTANT_IDD = """\
+Schedule:Constant,
+   \\memo Constant hourly value for entire year.
+   \\format singleLine
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+       \\reference ScheduleNames
+  A2 , \\field Schedule Type Limits Name
+       \\type object-list
+       \\object-list ScheduleTypeLimitsNames
+  N1 ; \\field Hourly Value
+       \\type real
+       \\default 0
+"""
+
+# Shortened to 3 months
+GROUND_TEMPERATURE_IDD = """\
+Site:GroundTemperature:BuildingSurface,
+       \\unique-object
+       \\format singleLine
+  N1 , \\field January Ground Temperature
+       \\units C
+       \\type real
+       \\default 18
+  N2 , \\field February Ground Temperature
+       \\units C
+       \\type real
+       \\default 18
+  N3 ; \\field March Ground Temperature
+       \\units C
+       \\type real
+       \\default 18
+"""
+
+
+@pytest.mark.parametrize("value", ["0", "0.0"])
+def test_idf_object_single_line_keeps_trailing_zero(value):
+    idd_obj = make_idd_object(SCHEDULE_CONSTANT_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text=f"Schedule:Constant,Always Off,,{value};")
+    assert str(obj).strip() == "Schedule:Constant,Always Off,,0.0;"
+
+
+def test_idf_object_single_line_keeps_zero_in_the_middle():
+    """A zero that isn't the default (18 here) must not become an empty field, which would mean 18."""
+    idd_obj = make_idd_object(GROUND_TEMPERATURE_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text="Site:GroundTemperature:BuildingSurface,0,0,19.5;")
+    assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0.0,0.0,19.5;"
+
+
+def test_idf_object_single_line_keeps_integer_reals(monkeypatch):
+    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+    idd_obj = make_idd_object(GROUND_TEMPERATURE_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text="Site:GroundTemperature:BuildingSurface,0,18.0,19.5;")
+    assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0,18.0,19.5;"
+
+
+def test_idf_object_single_line_still_trims_trailing_empty_fields():
+    idd_obj = make_idd_object(SCHEDULE_CONSTANT_IDD)
+    obj = IdfObject.load(idd_object=idd_obj, text="Schedule:Constant,Always Off,,;")
+    assert str(obj).strip() == "Schedule:Constant,Always Off;"
 
 
 # ---------------------------------------------------------------------------
@@ -804,7 +872,10 @@ def test_idf_object_str_roundtrip():
 
 
 def test_idf_object_str_extensible_group_lifecycle():
-    """Serialise before/after push_extensible_group and after clear_extensible_groups."""
+    """Serialise before/after push_extensible_group and after clear_extensible_groups.
+
+    Like in EnergyPlus' files, the group number is where the IDD has it: "Component 2 Object Type".
+    """
     idd_obj = make_idd_object(BRANCH_IDD)
     obj = IdfObject(idd_object=idd_obj)
     obj.setString(0, "Supply Branch")
@@ -828,14 +899,35 @@ def test_idf_object_str_extensible_group_lifecycle():
             "Branch,",
             "  Supply Branch,           !- Name",
             "  ,                        !- Pressure Drop Curve Name",
-            "  Pump:VariableSpeed,      !- Component Object Type",
-            "  Pump,                    !- Component Name",
-            "  Pump-Inlet,              !- Component Inlet Node Name",
-            "  Pump-Outlet;             !- Component Outlet Node Name",
+            "  Pump:VariableSpeed,      !- Component 1 Object Type",
+            "  Pump,                    !- Component 1 Name",
+            "  Pump-Inlet,              !- Component 1 Inlet Node Name",
+            "  Pump-Outlet;             !- Component 1 Outlet Node Name",
             "",
         ]
     )
     assert str(obj) == expected_with_group
+
+    # Push a second group: numbered 2
+    obj.push_extensible_group(["Coil:Heating:Water", "Coil", "Coil-Inlet", "Coil-Outlet"])
+    assert obj._num_active_fields == 2
+    expected_with_two_groups = "\n".join(
+        [
+            "Branch,",
+            "  Supply Branch,           !- Name",
+            "  ,                        !- Pressure Drop Curve Name",
+            "  Pump:VariableSpeed,      !- Component 1 Object Type",
+            "  Pump,                    !- Component 1 Name",
+            "  Pump-Inlet,              !- Component 1 Inlet Node Name",
+            "  Pump-Outlet,             !- Component 1 Outlet Node Name",
+            "  Coil:Heating:Water,      !- Component 2 Object Type",
+            "  Coil,                    !- Component 2 Name",
+            "  Coil-Inlet,              !- Component 2 Inlet Node Name",
+            "  Coil-Outlet;             !- Component 2 Outlet Node Name",
+            "",
+        ]
+    )
+    assert str(obj) == expected_with_two_groups
 
     # Clear extensible groups: fixed fields stay active, no extensible fields
     obj.clear_extensible_groups()
@@ -915,3 +1007,277 @@ DesignDayLike,
 
     assert choice_line.strip().startswith(","), f"Expected blank choice field, got: {choice_line!r}"
     assert real_line.strip().startswith(";"), f"Expected blank real field, got: {real_line!r}"
+
+
+# ---------------------------------------------------------------------------
+# \format vertices: X, Y and Z of a vertex on one line, like EnergyPlus' Transition writes them
+# ---------------------------------------------------------------------------
+
+SHADING_SITE_DETAILED_IDD = """\
+Shading:Site:Detailed,
+       \\memo Used for shading elements such as trees
+       \\extensible:3
+       \\format vertices
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+  N1 , \\field Number of Vertices
+       \\type integer
+       \\minimum 3
+       \\autocalculatable
+       \\default autocalculate
+  N2 , \\field Vertex 1 X-coordinate
+       \\begin-extensible
+       \\type real
+       \\units m
+  N3 , \\field Vertex 1 Y-coordinate
+       \\type real
+       \\units m
+  N4 ; \\field Vertex 1 Z-coordinate
+       \\type real
+       \\units m
+"""
+
+# Its vertices are regular fields (a window has 3 or 4)
+FENESTRATION_IDD = """\
+FenestrationSurface:Detailed,
+       \\format vertices
+  A1 , \\field Name
+       \\type alpha
+  N1 , \\field Number of Vertices
+       \\type integer
+       \\autocalculatable
+       \\default autocalculate
+  N2 , \\field Vertex 1 X-coordinate
+       \\units m
+  N3 , \\field Vertex 1 Y-coordinate
+       \\units m
+  N4 , \\field Vertex 1 Z-coordinate
+       \\units m
+  N5 , \\field Vertex 2 X-coordinate
+       \\units m
+  N6 , \\field Vertex 2 Y-coordinate
+       \\units m
+  N7 ; \\field Vertex 2 Z-coordinate
+       \\units m
+"""
+
+# Zone has \\format vertices, but its origin isn't a vertex
+ZONE_ORIGIN_IDD = """\
+Zone,
+       \\format vertices
+  A1 , \\field Name
+       \\type alpha
+  N1 , \\field X Origin
+       \\units m
+  N2 , \\field Y Origin
+       \\units m
+  N3 ; \\field Z Origin
+       \\units m
+"""
+
+
+def test_idf_object_str_format_vertices_extensible():
+    obj = IdfObject.load(make_idd_object(SHADING_SITE_DETAILED_IDD), "Shading:Site:Detailed,S,3,0,0,4.572,1,0,0,1,1,0;")
+    assert str(obj) == "\n".join(
+        [
+            "Shading:Site:Detailed,",
+            "  S,                       !- Name",
+            "  3,                       !- Number of Vertices",
+            "  0.0,0.0,4.572,  !- X,Y,Z ==> Vertex 1 {m}",
+            "  1.0,0.0,0.0,  !- X,Y,Z ==> Vertex 2 {m}",
+            "  1.0,1.0,0.0;  !- X,Y,Z ==> Vertex 3 {m}",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_vertices_regular_fields():
+    obj = IdfObject.load(make_idd_object(FENESTRATION_IDD), "FenestrationSurface:Detailed,W,2,0,0,1,0,0,0;")
+    assert str(obj) == "\n".join(
+        [
+            "FenestrationSurface:Detailed,",
+            "  W,                       !- Name",
+            "  2,                       !- Number of Vertices",
+            "  0.0,0.0,1.0,  !- X,Y,Z ==> Vertex 1 {m}",
+            "  0.0,0.0,0.0;  !- X,Y,Z ==> Vertex 2 {m}",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_vertices_zone_origin_isnt_a_vertex():
+    obj = IdfObject.load(make_idd_object(ZONE_ORIGIN_IDD), "Zone,Z1,1,2,3;")
+    assert str(obj) == "\n".join(
+        [
+            "Zone,",
+            "  Z1,                      !- Name",
+            "  1.0,                     !- X Origin {m}",
+            "  2.0,                     !- Y Origin {m}",
+            "  3.0;                     !- Z Origin {m}",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_vertices_custom_comment_on_z_is_kept():
+    """A custom comment ends up on the last field of the line, Z: it's kept on the vertex line."""
+    obj = IdfObject.load(
+        make_idd_object(SHADING_SITE_DETAILED_IDD),
+        "Shading:Site:Detailed,S,,\n  0,0,1,\n  1,0,0,\n  1,1,0;  ! My vertex\n",
+    )
+    assert str(obj).splitlines()[-1] == "  1.0,1.0,0.0;  ! My vertex"
+
+
+def test_idf_object_str_format_vertices_custom_comment_on_x_keeps_one_field_per_line():
+    """It can't be on the vertex line without being moved: that vertex is written one field per line."""
+    obj = IdfObject.load(
+        make_idd_object(SHADING_SITE_DETAILED_IDD),
+        "Shading:Site:Detailed,S,,\n  0,0,1,\n  1,0,0,\n  1,  ! My X\n  1,0;\n",
+    )
+    assert str(obj).splitlines()[-4:] == [
+        "  1.0,0.0,0.0,  !- X,Y,Z ==> Vertex 2 {m}",
+        "  1.0,                     ! My X",
+        "  1.0,                     !- Vertex 3 Y-coordinate {m}",
+        "  0.0;                     !- Vertex 3 Z-coordinate {m}",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# \format compactSchedule: "Until: HH:MM" and its value on one line, like EnergyPlus' Transition writes them
+# ---------------------------------------------------------------------------
+
+SCHEDULE_COMPACT_IDD = """\
+Schedule:Compact,
+       \\extensible:1
+       \\format compactSchedule
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+  A2 , \\field Schedule Type Limits Name
+       \\type object-list
+       \\object-list ScheduleTypeLimitsNames
+  A3 , \\field Field 1
+       \\begin-extensible
+       \\type alpha
+"""
+
+
+def test_idf_object_str_format_compact_schedule():
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD),
+        "Schedule:Compact,Sch,Fraction,Through: 12/31,For: AllDays,Until: 08:00,0.0,Until: 24:00,1.0;",
+    )
+    assert str(obj) == "\n".join(
+        [
+            "Schedule:Compact,",
+            "  Sch,                     !- Name",
+            "  Fraction,                !- Schedule Type Limits Name",
+            "  Through: 12/31,          !- Field 1",
+            "  For: AllDays,            !- Field 2",
+            "  Until: 08:00,0.0,        !- Field 3",
+            "  Until: 24:00,1.0;        !- Field 5",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_compact_schedule_custom_comment_on_value_is_kept():
+    """A custom comment ends up on the last field of the line, the value: it's kept on the Until line."""
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD),
+        "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,\n  Until: 24:00,1.0;  ! Always on\n",
+    )
+    assert str(obj).splitlines()[-1] == "  Until: 24:00,1.0;        ! Always on"
+
+
+def test_idf_object_str_format_compact_schedule_custom_comment_on_until_keeps_one_field_per_line():
+    """It can't be on the Until line without being moved: the Until field and its value stay on their own lines."""
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD),
+        "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,\n  Until: 24:00,  ! End of day\n  1.0;\n",
+    )
+    assert str(obj).splitlines()[-2:] == [
+        "  Until: 24:00,            ! End of day",
+        "  1.0;                     !- Field 4",
+    ]
+
+
+def test_idf_object_str_format_compact_schedule_until_last_field():
+    """An "Until" field with no value after it (invalid, but it must not be lost) is written alone."""
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD), "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,Until: 24:00;"
+    )
+    assert str(obj).splitlines()[-1] == "  Until: 24:00;            !- Field 3"
+
+
+# ---------------------------------------------------------------------------
+# \format FluidProperty and Spectral: the data fields (named with a number) several per line, without comments, like
+# EnergyPlus' Transition writes them
+# ---------------------------------------------------------------------------
+
+FLUID_TEMPERATURES_IDD = (
+    "FluidProperties:Temperatures,\n       \\format FluidProperty\n  A1 , \\field Name\n"
+    + "".join(f"  N{i} {';' if i == 9 else ','} \\field Temperature {i}\n       \\units C\n" for i in range(1, 10))
+)
+
+SPECTRAL_IDD = "MaterialProperty:GlazingSpectralData,\n       \\format Spectral\n  A1 , \\field Name\n" + "".join(
+    f"  N{4 * (g - 1) + i} {';' if g == 2 and i == 4 else ','} \\field {name} {g}\n"
+    for g in (1, 2)
+    for i, name in enumerate(["Wavelength", "Transmittance", "Front Reflectance", "Back Reflectance"], start=1)
+)
+
+
+def test_idf_object_str_format_fluid_property():
+    """7 values per line, the last line has what's left."""
+    obj = IdfObject.load(make_idd_object(FLUID_TEMPERATURES_IDD), "FluidProperties:Temperatures,T,1,2,3,4,5,6,7,8,9;")
+    assert str(obj) == "\n".join(
+        [
+            "FluidProperties:Temperatures,",
+            "  T,                       !- Name",
+            "  1.0,2.0,3.0,4.0,5.0,6.0,7.0,",
+            "  8.0,9.0;",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_spectral():
+    """4 values per line: wavelength, transmittance, front and back reflectance."""
+    obj = IdfObject.load(
+        make_idd_object(SPECTRAL_IDD), "MaterialProperty:GlazingSpectralData,S,0.3,0,0.045,0.045,0.31,0,0.044,0.044;"
+    )
+    assert str(obj) == "\n".join(
+        [
+            "MaterialProperty:GlazingSpectralData,",
+            "  S,                       !- Name",
+            "  0.3,0.0,0.045,0.045,",
+            "  0.31,0.0,0.044,0.044;",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_values_per_line_custom_comment_on_last_value_is_kept():
+    """A custom comment ends up on the last field of the line: it's kept on the line of values."""
+    obj = IdfObject.load(
+        make_idd_object(SPECTRAL_IDD),
+        "MaterialProperty:GlazingSpectralData,S,\n  0.3,0,0.045,0.045,  ! UV\n  0.31,0,0.044,0.044;\n",
+    )
+    assert str(obj).splitlines()[2:4] == ["  0.3,0.0,0.045,0.045,  ! UV", "  0.31,0.0,0.044,0.044;"]
+
+
+def test_idf_object_str_format_values_per_line_custom_comment_inside_keeps_one_field_per_line():
+    """It can't be on the line of values without being moved: those values are written one per line, the next ones
+    still several per line."""
+    obj = IdfObject.load(
+        make_idd_object(SPECTRAL_IDD),
+        "MaterialProperty:GlazingSpectralData,S,\n  0.3,  ! UV\n  0,0.045,0.045,\n  0.31,0,0.044,0.044;\n",
+    )
+    assert str(obj).splitlines()[2:7] == [
+        "  0.3,                     ! UV",
+        "  0.0,                     !- Transmittance 1",
+        "  0.045,                   !- Front Reflectance 1",
+        "  0.045,                   !- Back Reflectance 1",
+        "  0.31,0.0,0.044,0.044;",
+    ]
