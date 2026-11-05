@@ -747,6 +747,27 @@ def test_real_world_raw_string_split_for_msvc_in_comment(ep_idd):
     assert UnitTestFile(src).reformat(ep_idd) == src
 
 
+def test_real_world_missing_comma_two_objects_in_one_cpp_string(ep_idd):
+    """ChillerReformulatedEIR.unit.cc: a missing comma concatenates two C++ strings, so EnergyPlus gets two objects on
+    one IDF line, which is valid. Each object gets its own string, which adds the missing comma."""
+    src = """\
+    std::string const idf_objects = delimited_string({
+        "Timestep,4;"
+        "Zone,",
+        "  Z1;",
+    });
+"""
+    expected = """\
+    std::string const idf_objects = delimited_string({
+        "Timestep,4;",
+
+        "Zone,",
+        "  Z1;                      !- Name",
+    });
+"""
+    assert UnitTestFile(src).reformat(ep_idd) == expected
+
+
 def test_real_world_idf_line_split_in_two_cpp_strings(ep_idd):
     """AirflowNetworkHVAC.unit.cc: an IDF line split over two adjacent C++ strings is one IDF line, as in C++."""
     src = """\

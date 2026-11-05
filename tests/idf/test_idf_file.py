@@ -6,7 +6,7 @@ import pytest
 
 from energyplus_parser.idd.idd_file import IddFile
 from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idf.idf_file import IdfFile
+from energyplus_parser.idf.idf_file import IdfFile, split_objects_on_one_line
 from energyplus_parser.idf.idf_object import IdfObject
 
 RESOURCES = Path(__file__).parent.parent / "resources"
@@ -524,3 +524,40 @@ def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
 
     # All 88 objects are present
     assert idf.num_objects() == 88
+
+
+@pytest.mark.parametrize(
+    "one_line, separate_lines",
+    [
+        ("Timestep,4;Zone,Z1;\n", "Timestep,4;\nZone,Z1;\n"),
+        # The next object continues on the following lines
+        ("Timestep,4;Zone,\n  Z1;\n", "Timestep,4;\nZone,\n  Z1;\n"),
+        # A comment after the last ';' stays with the last object
+        ("Timestep,4;Zone,Z1;  ! My zone\n", "Timestep,4;\nZone,Z1;  ! My zone\n"),
+        # A comment right after a ';' is on that object's line: it stays with it, not with the next object (C++: a
+        # missing comma between "Timestep,4;" and "! something",)
+        ("Timestep,4;! something\nZone,Z1;\n", "Timestep,4;  ! something\nZone,Z1;\n"),
+    ],
+    ids=["two-objects", "next-object-continues", "comment", "comment-after-semicolon"],
+)
+def test_idf_file_several_objects_on_one_line(ep_idd, one_line, separate_lines):
+    """Valid IDF: a ';' ends an object, the next one can start on the same line. That's what EnergyPlus gets from two
+    C++ strings concatenated because of a missing comma (ChillerReformulatedEIR.unit.cc: "...10.0;" "Curve:...")."""
+    assert str(IdfFile.loads(one_line, ep_idd)) == str(IdfFile.loads(separate_lines, ep_idd))
+
+
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        ("  Zone,Z1;  ! My zone", ["  Zone,Z1;  ! My zone"]),
+        ("  Zone,", ["  Zone,"]),
+        ("Timestep,4;Zone,Z1;", ["Timestep,4;", "Zone,Z1;"]),
+        ("Timestep,4;Zone,", ["Timestep,4;", "Zone,"]),
+        ("Timestep,4;Zone,Z1;  ! My zone", ["Timestep,4;", "Zone,Z1;  ! My zone"]),
+        ("Timestep,4;! something", ["Timestep,4;! something"]),
+        ("A,1;B,2;C,3;", ["A,1;", "B,2;", "C,3;"]),
+        ("Zone,Z1;  ! a; b; c", ["Zone,Z1;  ! a; b; c"]),  # ';' in a comment isn't a separator
+    ],
+)
+def test_split_objects_on_one_line(line, expected):
+    assert split_objects_on_one_line(line) == expected
