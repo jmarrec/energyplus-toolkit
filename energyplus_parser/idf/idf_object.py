@@ -352,18 +352,15 @@ class IdfObject:
 
         indent = " " * idf_constants.IDF_LEADING
 
-        if self.idd_object.properties.format == IddObjectFormat.SingleLine:
-            if not all_fields:
-                lines.append(f"{indent}{self.idd_object.name};")
-            else:
-                # value_text() is empty only for an empty field: 0 / 0.0 are kept
-                vals = [f.value_text() for f in all_fields]
-                # Trim trailing empty fields
-                while len(vals) > 1 and not vals[-1]:
-                    vals.pop()
-                lines.append(f"{indent}{self.idd_object.name},{','.join(vals)};")
-        elif not all_fields:
+        if not all_fields:
             lines.append(f"{indent}{self.idd_object.name};")
+        elif self.idd_object.properties.format == IddObjectFormat.SingleLine:
+            # value_text() is empty only for an empty field: 0 / 0.0 are kept
+            vals = [f.value_text() for f in all_fields]
+            # Trim trailing empty fields
+            while len(vals) > 1 and not vals[-1]:
+                vals.pop()
+            lines.append(f"{indent}{self.idd_object.name},{','.join(vals)};")
         else:
             lines.append(f"{indent}{self.idd_object.name},")
             # Extensible fields are numbered by group, like in the IDD: "Vertex 1 X-coordinate", "Vertex 2 X-coordinate"
