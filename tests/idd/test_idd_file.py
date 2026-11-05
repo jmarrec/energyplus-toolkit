@@ -183,3 +183,12 @@ def test_parse_idd_file():
     assert idd_file.uniqueObjects() == [version_obj, building_obj, compliance_building_obj]
 
     assert idd_file.requiredObjects() == [building_obj]
+
+
+def test_idd_file_ends_with_exactly_one_newline():
+    """Each object ends with a blank line, but the file must not: pre-commit's end-of-file-fixer would remove it, and
+    reformat_idd would add it back on every run."""
+    text = str(IddFile.fromString(text=idd_text()))
+    assert text.endswith("\n")
+    assert not text.endswith("\n\n")
+    assert str(IddFile.fromString(text=text)) == text  # stable
