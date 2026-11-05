@@ -6,6 +6,7 @@ from typing import NamedTuple
 from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat
 from energyplus_parser.idf import idf_constants
+from energyplus_parser.idf.idf_constants import format_idf_field
 from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
 
 LOG = logging.getLogger("IdfObject")
@@ -61,6 +62,34 @@ def _vertices_format_lines(entries: list[FieldToWrite]) -> list[str]:
             lines.append(_vertex_line(fields, vertex, is_last_field=fields[-1] is last_field))
         else:
             lines.extend(f.text(is_last_field=f is last_field, field_name=name) for f, name in group_entries)
+    return lines
+
+
+def _compact_schedule_format_lines(entries: list[FieldToWrite]) -> list[str]:
+    """\\format compactSchedule: an "Until: HH:MM" field shares its line with the value after it, like EnergyPlus'
+    Transition writes it: "Until: 24:00,1.0,  !- Field 3". The other fields are one per line."""
+    last_field = entries[-1].field
+    lines = []
+    entries_iter = iter(entries)
+    for entry in entries_iter:
+        field = entry.field
+        # A custom comment ends up on the last field of a line: the Until field's can't be kept if the value follows it.
+        # next() only takes the value when the Until field can share its line
+        if (
+            field.value_text().strip().lower().startswith("until")
+            and field.comment is None
+            and (value := next(entries_iter, None)) is not None
+        ):
+            lines.append(
+                format_idf_field(
+                    value=f"{field.value_text()},{value.field.value_text()}",
+                    is_last_field=value.field is last_field,
+                    field_name=entry.name,
+                    comment=value.field.comment,
+                )
+            )
+        else:
+            lines.append(field.text(is_last_field=field is last_field, field_name=entry.name))
     return lines
 
 
@@ -426,6 +455,8 @@ class IdfObject:
             ]
             if self.idd_object.properties.format == IddObjectFormat.Vertices:
                 lines.extend(_vertices_format_lines(entries))
+            elif self.idd_object.properties.format == IddObjectFormat.CompactSchedule:
+                lines.extend(_compact_schedule_format_lines(entries))
             else:
                 for i, (field, name) in enumerate(entries):
                     lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))

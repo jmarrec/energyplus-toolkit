@@ -1141,3 +1141,71 @@ def test_idf_object_str_format_vertices_custom_comment_on_x_keeps_one_field_per_
         "  1.0,                     !- Vertex 3 Y-coordinate {m}",
         "  0.0;                     !- Vertex 3 Z-coordinate {m}",
     ]
+
+
+# ---------------------------------------------------------------------------
+# \format compactSchedule: "Until: HH:MM" and its value on one line, like EnergyPlus' Transition writes them
+# ---------------------------------------------------------------------------
+
+SCHEDULE_COMPACT_IDD = """\
+Schedule:Compact,
+       \\extensible:1
+       \\format compactSchedule
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+  A2 , \\field Schedule Type Limits Name
+       \\type object-list
+       \\object-list ScheduleTypeLimitsNames
+  A3 , \\field Field 1
+       \\begin-extensible
+       \\type alpha
+"""
+
+
+def test_idf_object_str_format_compact_schedule():
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD),
+        "Schedule:Compact,Sch,Fraction,Through: 12/31,For: AllDays,Until: 08:00,0.0,Until: 24:00,1.0;",
+    )
+    assert str(obj) == "\n".join(
+        [
+            "Schedule:Compact,",
+            "  Sch,                     !- Name",
+            "  Fraction,                !- Schedule Type Limits Name",
+            "  Through: 12/31,          !- Field 1",
+            "  For: AllDays,            !- Field 2",
+            "  Until: 08:00,0.0,        !- Field 3",
+            "  Until: 24:00,1.0;        !- Field 5",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_compact_schedule_custom_comment_on_value_is_kept():
+    """A custom comment ends up on the last field of the line, the value: it's kept on the Until line."""
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD),
+        "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,\n  Until: 24:00,1.0;  ! Always on\n",
+    )
+    assert str(obj).splitlines()[-1] == "  Until: 24:00,1.0;        ! Always on"
+
+
+def test_idf_object_str_format_compact_schedule_custom_comment_on_until_keeps_one_field_per_line():
+    """It can't be on the Until line without being moved: the Until field and its value stay on their own lines."""
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD),
+        "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,\n  Until: 24:00,  ! End of day\n  1.0;\n",
+    )
+    assert str(obj).splitlines()[-2:] == [
+        "  Until: 24:00,            ! End of day",
+        "  1.0;                     !- Field 4",
+    ]
+
+
+def test_idf_object_str_format_compact_schedule_until_last_field():
+    """An "Until" field with no value after it (invalid, but it must not be lost) is written alone."""
+    obj = IdfObject.load(
+        make_idd_object(SCHEDULE_COMPACT_IDD), "Schedule:Compact,Sch,,Through: 12/31,For: AllDays,Until: 24:00;"
+    )
+    assert str(obj).splitlines()[-1] == "  Until: 24:00;            !- Field 3"

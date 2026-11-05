@@ -35,8 +35,7 @@ TEST_F(EnergyPlusFixture, DelimitedStringTest)
         "  Fraction,                !- Schedule Type Limits Name",
         "  Through: 12/31,          !- Field 1",
         "  For: AllDays,            !- Field 2",
-        "  Until: 24:00,            !- Field 3",
-        "  1.0;                     !- Field 4",
+        "  Until: 24:00,1.0;        !- Field 3",
 
         "! An IDF comment",
 
