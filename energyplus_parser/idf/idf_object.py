@@ -1,4 +1,5 @@
 import logging
+from typing import NamedTuple
 
 from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat
@@ -7,6 +8,14 @@ from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField
 
 LOG = logging.getLogger("IdfObject")
 LOG.setLevel(logging.INFO)
+
+
+class FieldToWrite(NamedTuple):
+    """A field, with the name for its "!-" comment: numbered by group for an extensible field
+    ("Vertex 3 X-coordinate")."""
+
+    field: IdfField
+    name: str
 
 
 class IdfObjectError(ValueError):
@@ -364,8 +373,10 @@ class IdfObject:
         else:
             lines.append(f"{indent}{self.idd_object.name},")
             # Extensible fields are numbered by group, like in the IDD: "Vertex 1 X-coordinate", "Vertex 2 X-coordinate"
-            entries: list[tuple[IdfField, str]] = [(f, f.idd_field.name) for f in active_fixed] + [
-                (f, f.idd_field.name_for_group(i)) for i, group in enumerate(self._extensible_groups) for f in group
+            entries = [FieldToWrite(field=f, name=f.idd_field.name) for f in active_fixed] + [
+                FieldToWrite(field=f, name=f.idd_field.name_for_group(i))
+                for i, group in enumerate(self._extensible_groups)
+                for f in group
             ]
             for i, (field, name) in enumerate(entries):
                 lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))
