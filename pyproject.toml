@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "energyplus-toolkit"
-version = "0.2.0"
+version = "0.2.1"
 description = "Tools for EnergyPlus input files: parse, write back and reformat IDD and IDF files, and the IDF in EnergyPlus C++ unit tests."
 readme = "README.md"
 authors = [
