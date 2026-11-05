@@ -102,8 +102,8 @@ Curve:Quadratic,
   0.8,                     !- Coefficient1 Constant
   0.2,                     !- Coefficient2 x
   0.0,                     !- Coefficient3 x**2
-  0.5,                     !- Minimum Value of x {BasedOnField A2}
-  1.5;                     !- Maximum Value of x {BasedOnField A2}
+  0.5,                     !- Minimum Value of x
+  1.5;                     !- Maximum Value of x
 
     )IDF";
 

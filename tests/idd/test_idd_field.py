@@ -428,3 +428,16 @@ def test_regular_field_name_for_group_is_its_name():
     assert not field.extensible
     assert field.name == "Speed 1 Rated Flow"
     assert field.name_for_group(2) == "Speed 1 Rated Flow"
+
+
+def test_parse_idd_units_based_on_field():
+    """\\unitsBasedOnField was read as \\units "BasedOnField A2" (a case-sensitive check on lowercased text): the IDD
+    was written back with "\\units BasedOnField A2", and IDF comments with "{BasedOnField A2}"."""
+    ori_text = r"""  N7 , \field Minimum Value of x
+       \type real
+       \required-field
+       \unitsBasedOnField A2"""
+    field = IddField.load(objectName="Curve:Biquadratic", field_lines=ori_text.splitlines())
+    assert field.properties.unitsBasedOnField == "A2"
+    assert field.properties.units is None
+    assert str(field) == ori_text

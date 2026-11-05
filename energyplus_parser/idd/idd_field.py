@@ -67,6 +67,8 @@ class IddFieldProperties:
         self.units: str | None = None
         # IP units — for user-facing displays only, no effect on underlying data
         self.ipUnits: str | None = None
+        # The units depend on another field of the object, eg "A2" for a curve's "Input Unit Type for X"
+        self.unitsBasedOnField: str | None = None
 
         # Minimum bound is non-existent (Unbounded), >= (InclusiveBound), or > (ExclusiveBound).
         self.minBoundType: BoundTypes = BoundTypes.Unbounded
@@ -111,6 +113,7 @@ class IddFieldProperties:
             and self.beginExtensible == other.beginExtensible
             and self.units == other.units
             and self.ipUnits == other.ipUnits
+            and self.unitsBasedOnField == other.unitsBasedOnField
             and self.minBoundType == other.minBoundType
             and self.minBoundValue == other.minBoundValue
             and self.maxBoundType == other.maxBoundType
@@ -160,6 +163,8 @@ class IddFieldProperties:
             lines.append(f"{BLOCK_INDENT}\\units {self.units}")
         if self.ipUnits:
             lines.append(f"{BLOCK_INDENT}\\ip-units {self.ipUnits}")
+        if self.unitsBasedOnField:
+            lines.append(f"{BLOCK_INDENT}\\unitsBasedOnField {self.unitsBasedOnField}")
 
         # Bounds
         if self.minBoundType == BoundTypes.InclusiveBound and self.minBoundValue is not None:
@@ -405,8 +410,9 @@ class IddField:
 
         # === u ===
         elif index == 'u':
-            if lower_text.startswith("unitsBasedOnField"):
-                # intentionally ignored in C++
+            # Before "units", that it starts with
+            if lower_text.startswith(tag := "unitsbasedonfield"):
+                self.properties.unitsBasedOnField = text[len(tag) :].split('!')[0].strip()
                 not_handled = False
             elif lower_text.startswith(tag := "units"):
                 self.properties.units = text[len(tag) :].split('!')[0].strip()
