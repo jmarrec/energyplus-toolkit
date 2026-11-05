@@ -11,14 +11,13 @@ authors = [
 ]
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -94,7 +93,7 @@ omit = [
 [tool.tox]
 isolated_build = true
 requires = ["tox>=4.32"]
-env_list = ["3.13", "3.12", "3.10", "type"]
+env_list = ["3.13", "3.12", "3.11", "type"]
 
 [tool.tox.env_run_base]
 description = "Run tests under {base_python}"
