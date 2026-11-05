@@ -1,18 +1,36 @@
 # energyplus-toolkit
 
-Tools for EnergyPlus input files:
+[![pypi](https://img.shields.io/pypi/v/energyplus-toolkit.svg)](https://pypi.org/project/energyplus-toolkit/)
+[![python](https://img.shields.io/pypi/pyversions/energyplus-toolkit.svg)](https://pypi.org/project/energyplus-toolkit/)
+[![Build Status](https://github.com/jmarrec/energyplus-toolkit/actions/workflows/dev.yml/badge.svg)](https://github.com/jmarrec/energyplus-toolkit/actions/workflows/dev.yml)
+
+Tools for [EnergyPlus](https://energyplus.net) input files:
 
 - parse IDD and IDF files, link each IDF object and field to its IDD definition, and write them back faithfully;
 - reformat IDF and IDD files, and the IDF embedded in EnergyPlus C++ unit tests, from the command line or as
   pre-commit hooks.
 
+* GitHub: <https://github.com/jmarrec/energyplus-toolkit>
+* PyPI: <https://pypi.org/project/energyplus-toolkit/>
+
+## Installation
+
+```bash
+pip install energyplus-toolkit
+```
+
 Requires Python 3.11+.
+
+For development:
+
+```bash
+pip install -e ".[dev,test]"  # With the dev tools (pre-commit, black, isort, flake8, mypy) and the tests (pytest)
+pre-commit install
+```
 
 ## Command line
 
 ```shell
-pip install energyplus-toolkit
-
 # Reformat in place, like black: files and/or folders (searched recursively), in parallel
 energyplus-toolkit format idf --idd Energy+.idd testfiles/
 energyplus-toolkit format idd Energy+.idd

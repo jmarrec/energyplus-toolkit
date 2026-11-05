@@ -26,7 +26,6 @@ classifiers = [
 [project.urls]
 Homepage = "https://effibem.com"
 Repository = "https://github.com/jmarrec/energyplus-toolkit"
-Changelog = "https://github.com/jmarrec/energyplus-toolkit/blob/main/CHANGELOG.md"
 Issues = "https://github.com/jmarrec/energyplus-toolkit/issues"
 
 [project.scripts]
@@ -46,7 +45,6 @@ dev = [
     "flake8-docstrings>=1.7.0",
     "black>=25.12.0",
     "isort>=7.0.0",
-    "tox>=4.32",
 ]
 
 [tool.black]
@@ -88,24 +86,4 @@ testpaths = ["tests"]
 [tool.coverage.run]
 omit = [
     "energyplus_toolkit/__main__.py",
-]
-
-[tool.tox]
-isolated_build = true
-requires = ["tox>=4.32"]
-env_list = ["3.13", "3.12", "3.11", "type"]
-
-[tool.tox.env_run_base]
-description = "Run tests under {base_python}"
-extras = ["test"]
-allowlist_externals = ["pytest"]
-commands = [["pytest", "--cov={envsitepackagesdir}/energyplus_toolkit", "--cov-branch", "--cov-report=xml", "--cov-report=term-missing"]]
-
-[tool.tox.env.type]
-description = "Run type checks on code base"
-extras = ["dev"]
-allowlist_externals = ["mypy"]
-commands = [
-    ["mypy", "energyplus_toolkit"],
-    ["mypy", "tests"],
 ]
