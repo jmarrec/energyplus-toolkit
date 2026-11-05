@@ -163,8 +163,8 @@ def test_parse_idd_object_with_one_extensible() -> None:
        \key Solar
        \key Visible
   N1 , \field Wavelength
-       \type real
        \begin-extensible
+       \type real
        \units micron
   N2 ; \field Spectrum
        \type real
@@ -366,8 +366,8 @@ def test_parse_idd_preserve_useless_fields_to_please_idfeditor():
   A2 , \field Inlet Node Name
        \type node
   A3 , \field Outlet Node Name
-       \type node
        \begin-extensible
+       \type node
   A4  , A5  , A6  , A7  , A8  , A9  , A10 , A11 , A12 , A13 ,
   A14 , A15 , A16 , A17 , A18 , A19 , A20 , A21 , A22 , A23 ,
   A24 , A25 , A26 , A27 , A28 , A29 , A30 , A31 , A32 , A33 ,

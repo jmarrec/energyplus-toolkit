@@ -139,8 +139,8 @@ def test_parse_idd_extensible_field():
     objectName = "DesignSpecification:OutdoorAir:SpaceList"
     name = "Space 1 Name"
     ori_text = r"""  A2 , \field Space 1 Name
-       \type object-list
        \begin-extensible
+       \type object-list
        \object-list SpaceNames"""
     field = IddField.load(objectName=objectName, field_lines=ori_text.splitlines())
 

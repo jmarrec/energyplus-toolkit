@@ -128,6 +128,10 @@ class IddFieldProperties:
         """Render this field's properties in IDD-style text."""
         lines: list[str] = []
 
+        # First, like in most of EnergyPlus' IDD: the extensible group starts here
+        if self.beginExtensible:
+            lines.append(f"{BLOCK_INDENT}\\begin-extensible")
+
         # Notes
         if self.note:
             for line in self.note.splitlines():
@@ -148,8 +152,6 @@ class IddFieldProperties:
             lines.append(f"{BLOCK_INDENT}\\retaincase")
         if self.deprecated:
             lines.append(f"{BLOCK_INDENT}\\deprecated")
-        if self.beginExtensible:
-            lines.append(f"{BLOCK_INDENT}\\begin-extensible")
 
         # Units
         if self.units:
