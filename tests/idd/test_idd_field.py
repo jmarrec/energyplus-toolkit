@@ -1,7 +1,14 @@
 import pytest
 
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType, IddKey
+from energyplus_parser.idd.idd_field import (
+    BoundTypes,
+    IddField,
+    IddFieldParseError,
+    IddFieldProperties,
+    IddFieldType,
+    IddKey,
+)
 
 
 def test_field_props_formatting():
@@ -368,3 +375,13 @@ def test_parse_idd_required_field():
             r"       \reference ZoneTerminalUnitNames",
         ]
     )
+
+
+@pytest.mark.parametrize("second_name", ["Name", "Other Name"])
+def test_parse_idd_duplicate_field_line(second_name):
+    """A field has one \\field line, on its first line: a second one is malformed, even with the same name."""
+    with pytest.raises(IddFieldParseError, match="Duplicate"):
+        IddField.load(
+            objectName="Zone",
+            field_lines=["  A1 , \\field Name", "       \\type alpha", f"       \\field {second_name}"],
+        )

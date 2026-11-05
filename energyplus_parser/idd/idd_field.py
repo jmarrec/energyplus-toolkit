@@ -267,14 +267,11 @@ class IddField:
 
         # === f ===
         elif index == 'f':
-            if lower_text.startswith(tag := "field"):
-                field_name = text[len(tag) :].split('!')[0].strip()
-                not_handled = False
-                if self.name != field_name:
-                    raise ValueError(
-                        f"Field name '{field_name}' does not match expected '{self.name}' "
-                        f"in object '{self.objectName}'"
-                    )
+            if lower_text.startswith("field"):
+                # The name is on the field's first line ("A1 , \field Name"): another \field line is malformed
+                raise IddFieldParseError(
+                    f"Duplicate \\field line '\\{text}' in field '{self.name}' of object '{self.objectName}'"
+                )
 
         # === i ===
         elif index == 'i':
@@ -372,24 +369,6 @@ class IddField:
             raise ValueError(f"Unknown field property text '{text}' detected in field '{self.name}'")
 
     @staticmethod
-    def from_field_id_only(objectName: str, field_id=str) -> "IddField":
-        field_id = field_id.strip()
-        field = IddField(objectName=objectName)
-        field.field_id = field_id
-
-        fieldTypeChar = field.field_id[0]
-
-        # Determine type
-        if fieldTypeChar.lower() == "a":
-            field.properties.type = IddFieldType.AlphaType
-        elif fieldTypeChar.lower() == "n":
-            # Default numerics to real
-            field.properties.type = IddFieldType.RealType
-        else:
-            raise IddFieldParseError(f"Unknown field type identifier found: '{fieldTypeChar}'")
-        return field
-
-    @staticmethod
     def load(objectName: str, field_lines: list[str]) -> "IddField":
         field = IddField(objectName=objectName)
         field._parse(field_lines=field_lines)
@@ -405,17 +384,11 @@ class IddField:
         line_number = 0
         self.is_last_field = ';' in field_lines[line_number]
         if '\\field' not in field_lines[line_number]:
-            breakpoint()
             raise IddFieldParseError(f"First line of field does not contain '\\field': '{field_lines[line_number]}'")
         self.field_id = field_lines[line_number].replace(',', ';').split(';', maxsplit=1)[0]
         self.field_id = self.field_id.strip()
 
-        field_name = field_lines[line_number].split('\\field ', maxsplit=1)[1].strip().split('!')[0].strip()
-        self.name = field_name
-        if field_name != self.name:
-            raise ValueError(
-                f"Field name '{field_name}' does not match expected '{self.name}' in object '{self.objectName}'"
-            )
+        self.name = field_lines[line_number].split('\\field ', maxsplit=1)[1].strip().split('!')[0].strip()
 
         line_number += 1
 
