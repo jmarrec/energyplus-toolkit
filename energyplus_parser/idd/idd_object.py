@@ -74,28 +74,32 @@ class IddObjectProperties:
     def __str__(self) -> str:
         lines = []
 
+        # Most important properties first
+        if self.obsolete:
+            replacement = f" New=>{self.obsolete_replacement}" if self.obsolete_replacement else ""
+            lines.append(f"{BLOCK_INDENT}\\obsolete{replacement}")
+        if self.unique:
+            lines.append(f"{BLOCK_INDENT}\\unique-object")
+        if self.required:
+            lines.append(f"{BLOCK_INDENT}\\required-object")
+        if self.hasUrl:
+            lines.append(f"{BLOCK_INDENT}\\url-object")
+
         # Memo lines
         if self.memo:
             for line in self.memo.splitlines():
                 lines.append(f"{BLOCK_INDENT}\\memo {line}")
 
-        if self.unique:
-            lines.append(f"{BLOCK_INDENT}\\unique-object")
-        if self.required:
-            lines.append(f"{BLOCK_INDENT}\\required-object")
-        if self.obsolete:
-            replacement = f" New=>{self.obsolete_replacement}" if self.obsolete_replacement else ""
-            lines.append(f"{BLOCK_INDENT}\\obsolete{replacement}")
-        if self.hasUrl:
-            lines.append(f"{BLOCK_INDENT}\\url-object")
+        # Object field layout and formatting properties
         if self.extensible:
             lines.append(f"{BLOCK_INDENT}\\extensible:{self.numExtensible}")
-        if self.format is not None:
-            lines.append(f"{BLOCK_INDENT}\\format {self.format.value}")
         if self.minFields > 0:
             lines.append(f"{BLOCK_INDENT}\\min-fields {self.minFields}")
         if self.maxFields is not None:
             lines.append(f"{BLOCK_INDENT}\\max-fields {self.maxFields}")
+
+        if self.format is not None:
+            lines.append(f"{BLOCK_INDENT}\\format {self.format.value}")
 
         return "\n".join(lines)
 

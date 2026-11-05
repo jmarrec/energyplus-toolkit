@@ -20,9 +20,9 @@ def test_idd_object_properties() -> None:
     obj_props.maxFields = 10
     expected = "\n".join(
         [
-            f'{BLOCK_INDENT}\\memo This is a test memo.',
             f'{BLOCK_INDENT}\\unique-object',
             f'{BLOCK_INDENT}\\required-object',
+            f'{BLOCK_INDENT}\\memo This is a test memo.',
             f'{BLOCK_INDENT}\\extensible:2',
             f'{BLOCK_INDENT}\\min-fields 5',
             f'{BLOCK_INDENT}\\max-fields 10',
@@ -35,12 +35,12 @@ def test_parse_idd_object_required_unique() -> None:
     name = "Building"
     group = "Simulation Parameters"
     ori_text = r"""Building,
+       \unique-object
+       \required-object
        \memo Describes parameters that are used during the simulation
        \memo of the building. There are necessary correlations between the entries for
        \memo this object and some entries in the Site:WeatherStation and
        \memo Site:HeightVariation objects, specifically the Terrain field.
-       \unique-object
-       \required-object
        \min-fields 8
   A1 , \field Name
        \type alpha
