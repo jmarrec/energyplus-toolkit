@@ -1,7 +1,7 @@
 import pytest
 
-from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_field import (
+from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
+from energyplus_toolkit.input.idd.idd_field import (
     BoundTypes,
     IddField,
     IddFieldParseError,

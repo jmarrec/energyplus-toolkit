@@ -1,9 +1,9 @@
 import re
 from pathlib import Path
 
-from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
-from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
+from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
+from energyplus_toolkit.input.idd.idd_object import IddObject
+from energyplus_toolkit.input.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
 
 
 class IddFile:

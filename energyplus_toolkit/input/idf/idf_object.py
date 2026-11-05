@@ -3,11 +3,11 @@ import logging
 import re
 from typing import NamedTuple
 
-from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
-from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat
-from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_constants import format_idf_field
-from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
+from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
+from energyplus_toolkit.input.idd.idd_object import IddObject, IddObjectFormat
+from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.idf.idf_constants import format_idf_field
+from energyplus_toolkit.input.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
 
 LOG = logging.getLogger("IdfObject")
 LOG.setLevel(logging.INFO)

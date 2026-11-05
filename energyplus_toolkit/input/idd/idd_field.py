@@ -2,8 +2,8 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 
-from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
-from energyplus_parser.idd.idd_regex import RE_GROUP_NUMBER
+from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
+from energyplus_toolkit.input.idd.idd_regex import RE_GROUP_NUMBER
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)

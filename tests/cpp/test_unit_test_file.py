@@ -1,18 +1,18 @@
-"""Tests for energyplus_parser.cpp.unit_test_file — block detection, C++ comments and IDF reformatting."""
+"""Tests for energyplus_toolkit.format.cpp.unit_test_file — block detection, C++ comments and IDF reformatting."""
 
 import logging
 from pathlib import Path
 
 import pytest
 
-from energyplus_parser.cpp.unit_test_file import (
+from energyplus_toolkit.format.cpp.unit_test_file import (
     CppComment,
     DelimitedStringBlock,
     RawStringBlock,
     RegularCodeBlock,
     UnitTestFile,
 )
-from energyplus_parser.idd.idd_file import IddFile
+from energyplus_toolkit.input.idd.idd_file import IddFile
 
 RESOURCES = Path(__file__).parent.parent / "resources" / "cpp"
 IDD_PATH = Path(__file__).parent.parent / "resources" / "V26-1-0-Energy+.idd"

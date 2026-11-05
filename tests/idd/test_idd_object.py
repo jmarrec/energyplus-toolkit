@@ -1,7 +1,7 @@
 import pytest
 
-from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat, IddObjectProperties
+from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
+from energyplus_toolkit.input.idd.idd_object import IddObject, IddObjectFormat, IddObjectProperties
 
 
 def test_idd_object_properties() -> None:

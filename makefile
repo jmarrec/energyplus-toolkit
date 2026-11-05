@@ -1,4 +1,4 @@
-sources = energyplus_parser
+sources = energyplus_toolkit
 
 .PHONY: test format lint unittest coverage pre-commit clean
 test: format lint unittest
@@ -23,5 +23,5 @@ pre-commit:
 clean:
 	rm -rf .mypy_cache .pytest_cache
 	rm -rf *.egg-info
-	rm -rf .tox dist site
+	rm -rf dist site
 	rm -rf coverage.xml .coverage
