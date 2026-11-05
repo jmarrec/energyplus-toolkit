@@ -4,7 +4,7 @@ import re
 
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import IddField
-from energyplus_parser.idd.idd_regex import RE_FIELD_START, RE_NUMBER_AND_PRECEDING_SPACE
+from energyplus_parser.idd.idd_regex import RE_FIELD_START
 
 LOG = logging.getLogger("IddObject")
 LOG.setLevel(logging.INFO)
@@ -218,8 +218,6 @@ class IddObject:
                             f"'{self.name}' for field '{field.name}'"
                         )
                 if found_begin_extensible:
-                    # Remove number from field name
-                    field.name = RE_NUMBER_AND_PRECEDING_SPACE.sub("", field.name, count=1).strip()
                     self.extensible_fields.append(field)
                 else:
                     self.fields.append(field)
@@ -244,6 +242,9 @@ class IddObject:
 
         for field in self.fields + self.extensible_fields:
             field.unnamed = field.field_id in unnamed_ids
+
+        for field in self.extensible_fields:
+            field.markExtensible()
 
         # Calculate extensible groups required
         if self.properties.extensible:

@@ -96,11 +96,12 @@ class IdfField(ABC):
         v = self.value(return_default=False)
         return "" if v is None else str(v)
 
-    def text(self, is_last_field: bool = False) -> str:
+    def text(self, is_last_field: bool = False, field_name: str | None = None) -> str:
+        """The field's IDF line. ``field_name`` (for the ``!-`` comment) defaults to the IDD field name."""
         return format_idf_field(
             value=self.value_text(),
             is_last_field=is_last_field,
-            field_name=self.idd_field.name,
+            field_name=self.idd_field.name if field_name is None else field_name,
             comment=self.comment,
             units=self.idd_field.properties.units,
         )

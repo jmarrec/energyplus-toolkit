@@ -263,8 +263,11 @@ def test_parse_idd_object_with_extra_extensible_fields() -> None:
         "Spectrum 2",
     ]
     assert len(idd_obj.extensible_fields) == 2
-    assert idd_obj.extensible_fields[0].name == "Wavelength"
-    assert idd_obj.extensible_fields[1].name == "Spectrum"
+    # The name has no group number. The first extensible group is the 3rd one: the first 2 are regular fields, so the
+    # groups are numbered from 3
+    assert [x.name for x in idd_obj.extensible_fields] == ["Wavelength", "Spectrum"]
+    assert [x.name_for_group(0) for x in idd_obj.extensible_fields] == ["Wavelength 3", "Spectrum 3"]
+    assert [x.name_for_group(1) for x in idd_obj.extensible_fields] == ["Wavelength 4", "Spectrum 4"]
 
 
 def test_parse_idd_object_weird_ground():
@@ -520,3 +523,23 @@ def test_required_field_with_default_stays_required_in_idd() -> None:
     idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
     assert idd_obj.fields[1].properties.required
     assert str(idd_obj).count("\\required-field") == 2
+
+
+def test_extensible_field_names_keep_the_group_number() -> None:
+    """Extensible fields are named without the group number, but the IDD's name is written back, and the number is put
+    back where it was for each group: "Vertex 3 X-coordinate", "DayType List 3"."""
+    ori_text = r"""Some:Object,
+       \extensible:2
+  A1 , \field Name
+       \type alpha
+  N1 , \field Vertex 1 X-coordinate
+       \begin-extensible
+       \type real
+  A2 ; \field DayType List 1
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    text = str(idd_obj)
+    assert r"\field Vertex 1 X-coordinate" in text
+    assert r"\field DayType List 1" in text
+    assert text == ori_text

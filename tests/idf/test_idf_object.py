@@ -872,7 +872,10 @@ def test_idf_object_str_roundtrip():
 
 
 def test_idf_object_str_extensible_group_lifecycle():
-    """Serialise before/after push_extensible_group and after clear_extensible_groups."""
+    """Serialise before/after push_extensible_group and after clear_extensible_groups.
+
+    Like in EnergyPlus' files, the group number is where the IDD has it: "Component 2 Object Type".
+    """
     idd_obj = make_idd_object(BRANCH_IDD)
     obj = IdfObject(idd_object=idd_obj)
     obj.setString(0, "Supply Branch")
@@ -896,14 +899,35 @@ def test_idf_object_str_extensible_group_lifecycle():
             "Branch,",
             "  Supply Branch,           !- Name",
             "  ,                        !- Pressure Drop Curve Name",
-            "  Pump:VariableSpeed,      !- Component Object Type",
-            "  Pump,                    !- Component Name",
-            "  Pump-Inlet,              !- Component Inlet Node Name",
-            "  Pump-Outlet;             !- Component Outlet Node Name",
+            "  Pump:VariableSpeed,      !- Component 1 Object Type",
+            "  Pump,                    !- Component 1 Name",
+            "  Pump-Inlet,              !- Component 1 Inlet Node Name",
+            "  Pump-Outlet;             !- Component 1 Outlet Node Name",
             "",
         ]
     )
     assert str(obj) == expected_with_group
+
+    # Push a second group: numbered 2
+    obj.push_extensible_group(["Coil:Heating:Water", "Coil", "Coil-Inlet", "Coil-Outlet"])
+    assert obj._num_active_fields == 2
+    expected_with_two_groups = "\n".join(
+        [
+            "Branch,",
+            "  Supply Branch,           !- Name",
+            "  ,                        !- Pressure Drop Curve Name",
+            "  Pump:VariableSpeed,      !- Component 1 Object Type",
+            "  Pump,                    !- Component 1 Name",
+            "  Pump-Inlet,              !- Component 1 Inlet Node Name",
+            "  Pump-Outlet,             !- Component 1 Outlet Node Name",
+            "  Coil:Heating:Water,      !- Component 2 Object Type",
+            "  Coil,                    !- Component 2 Name",
+            "  Coil-Inlet,              !- Component 2 Inlet Node Name",
+            "  Coil-Outlet;             !- Component 2 Outlet Node Name",
+            "",
+        ]
+    )
+    assert str(obj) == expected_with_two_groups
 
     # Clear extensible groups: fixed fields stay active, no extensible fields
     obj.clear_extensible_groups()

@@ -1,7 +1,9 @@
 import logging
+from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 
 from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
+from energyplus_parser.idd.idd_regex import RE_GROUP_NUMBER
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)
@@ -209,8 +211,48 @@ class IddKey:
         return f"{BLOCK_INDENT}\\key {self.name}"
 
 
+@dataclass(frozen=True)
+class ExtensibleGroupNumbering:
+    """Where the group number goes in the name of an extensible field.
+
+    "Vertex 1 X-coordinate" is ExtensibleGroupNumbering(prefix="Vertex", first_number=1, suffix="X-coordinate").
+    A name with no number, eg Site:SpectrumData "Wavelength", gets it appended, like OpenStudio does:
+    ExtensibleGroupNumbering(prefix="Wavelength", first_number=None, suffix="").
+    """
+
+    prefix: str
+    # The number of the first extensible group, as in the IDD (not always 1). None if the IDD's name has none
+    first_number: int | None
+    suffix: str
+
+    @property
+    def base_name(self) -> str:
+        """The name without the group number: "Vertex X-coordinate"."""
+        return " ".join(p for p in (self.prefix, self.suffix) if p)
+
+    def name(self, group_index: int) -> str:
+        """The name in extensible group ``group_index`` (0 for the first one): "Vertex 3 X-coordinate" for 2."""
+        first_number = 1 if self.first_number is None else self.first_number
+        return " ".join(p for p in (self.prefix, str(first_number + group_index), self.suffix) if p)
+
+    def idd_name(self) -> str:
+        """The name as written in the IDD: with the number of the first group, if it had one."""
+        return self.base_name if self.first_number is None else self.name(group_index=0)
+
+    @staticmethod
+    def parse(name: str) -> "ExtensibleGroupNumbering":
+        """Parse an extensible field name from the IDD: the group number is its last standalone number."""
+        m = RE_GROUP_NUMBER.search(name)
+        if m is None:
+            return ExtensibleGroupNumbering(prefix=name, first_number=None, suffix="")
+        prefix = name[: m.start()].strip()
+        suffix = name[m.end() :].strip()
+        return ExtensibleGroupNumbering(prefix=prefix, first_number=int(m.group()), suffix=suffix)
+
+
 class IddField:
     def __init__(self, objectName: str):
+        # The field name. For an extensible field, without the group number: see markExtensible
         self.name: str = ""
         self.field_id: str = ""
         # Declared without a \field name, on a compact line ("N1, N2, N3,"): written back that way
@@ -219,6 +261,11 @@ class IddField:
         self.properties: IddFieldProperties = IddFieldProperties()
         self.keys: list[IddKey] = []
         self.is_last_field: bool = False
+
+        # Extensible groups, see markExtensible
+        self.extensible: bool = False
+        # Where the group number goes in its name, for an extensible field
+        self._extensible_group_numbering: ExtensibleGroupNumbering | None = None
 
     def _parse_property(self, text: str):
         if not text:
@@ -449,10 +496,44 @@ class IddField:
             return True
         return self.name.lower() == "name" and p.type in (IddFieldType.AlphaType, IddFieldType.NodeType)
 
+    def markExtensible(self) -> None:
+        """Mark this field as part of the extensible group (called by IddObject).
+
+        Its name loses the group number, the last standalone number in it: "Vertex 1 X-coordinate" becomes
+        "Vertex X-coordinate", "2017 Speed 1 Rated ..." becomes "2017 Speed Rated ...". ``name_for_group`` puts it back.
+        A name with no number (eg Site:SpectrumData "Wavelength", most of OpenStudio's IDD) is kept as is,
+        ``name_for_group`` appends it.
+        """
+        if self.extensible:
+            raise ValueError(f"Field '{self.name}' of object '{self.objectName}' is already marked extensible")
+        self.extensible = True
+        self._extensible_group_numbering = ExtensibleGroupNumbering.parse(name=self.name)
+        self.name = self._extensible_group_numbering.base_name
+
+    def name_for_group(self, group_index: int) -> str:
+        """The name in extensible group ``group_index`` (0 for the first one): the IDD's group number plus
+        ``group_index``, where it was in the name.
+
+        Eg "Vertex 3 X-coordinate" for group 2 of "Vertex 1 X-coordinate", "Wavelength 7" for group 2 of "Wavelength 5"
+        (MaterialProperty:GlazingSpectralData, whose first 4 groups aren't extensible).
+        If the IDD name has no number, it is appended, like OpenStudio does: "Wavelength 3" for group 2 of "Wavelength".
+        A field that isn't extensible keeps its name.
+        """
+        if self._extensible_group_numbering is None:
+            return self.name
+        return self._extensible_group_numbering.name(group_index)
+
+    def _idd_name(self) -> str:
+        """The name as written in the IDD: with the number of the first group, if it had one."""
+        if self._extensible_group_numbering is None:
+            return self.name
+        return self._extensible_group_numbering.idd_name()
+
     def __repr__(self):
+        """The field's IDD text: its \\field line and properties, written as in the IDD (``__str__`` adds the keys)."""
         return (
             f"{format_leading(field_id=self.field_id, is_last_field=self.is_last_field)}"
-            f"\\field {self.name}\n{self.properties}"
+            f"\\field {self._idd_name()}\n{self.properties}"
         )
 
     def __str__(self):

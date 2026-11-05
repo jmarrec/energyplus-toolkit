@@ -366,9 +366,12 @@ class IdfObject:
             lines.append(f"{indent}{self.idd_object.name};")
         else:
             lines.append(f"{indent}{self.idd_object.name},")
-            for i, field in enumerate(all_fields):
-                is_last = i == len(all_fields) - 1
-                lines.append(field.text(is_last_field=is_last))
+            # Extensible fields are numbered by group, like in the IDD: "Vertex 1 X-coordinate", "Vertex 2 X-coordinate"
+            entries: list[tuple[IdfField, str]] = [(f, f.idd_field.name) for f in active_fixed] + [
+                (f, f.idd_field.name_for_group(i)) for i, group in enumerate(self._extensible_groups) for f in group
+            ]
+            for i, (field, name) in enumerate(entries):
+                lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))
 
         lines.append("")  # blank line at end
         return "\n".join(lines)

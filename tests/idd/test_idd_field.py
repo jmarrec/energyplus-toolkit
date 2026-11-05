@@ -385,3 +385,46 @@ def test_parse_idd_duplicate_field_line(second_name):
             objectName="Zone",
             field_lines=["  A1 , \\field Name", "       \\type alpha", f"       \\field {second_name}"],
         )
+
+
+@pytest.mark.parametrize(
+    "idd_name, name, group_0_name, group_2_name",
+    [
+        ("Vertex 1 X-coordinate", "Vertex X-coordinate", "Vertex 1 X-coordinate", "Vertex 3 X-coordinate"),
+        ("DayType List 1", "DayType List", "DayType List 1", "DayType List 3"),
+        # The group number is the last one: OpenStudio makes the DX coil speeds extensible
+        (
+            "2017 Speed 1 Rated Evaporator Fan Power Per Volume Flow Rate",
+            "2017 Speed Rated Evaporator Fan Power Per Volume Flow Rate",
+            "2017 Speed 1 Rated Evaporator Fan Power Per Volume Flow Rate",
+            "2017 Speed 3 Rated Evaporator Fan Power Per Volume Flow Rate",
+        ),
+        ("1 Speed Rated Flow", "Speed Rated Flow", "1 Speed Rated Flow", "3 Speed Rated Flow"),
+        # Site:SpectrumData: no number, it's appended, like OpenStudio does
+        ("Wavelength", "Wavelength", "Wavelength 1", "Wavelength 3"),
+    ],
+)
+def test_extensible_field_name_for_group(idd_name, name, group_0_name, group_2_name):
+    field = IddField.load(objectName="Some:Object", field_lines=[f"  N1 , \\field {idd_name}", "       \\type real"])
+    field.markExtensible()
+    assert field.extensible
+    assert field.name == name
+    assert field.name_for_group(0) == group_0_name
+    assert field.name_for_group(2) == group_2_name
+    assert repr(field).startswith(f"  N1 , \\field {idd_name}\n")  # written back to the IDD as it was
+
+
+def test_mark_extensible_twice_is_an_error():
+    field = IddField.load(objectName="Some:Object", field_lines=["  N1 , \\field Vertex 1 X-coordinate"])
+    field.markExtensible()
+    with pytest.raises(ValueError, match="already marked extensible"):
+        field.markExtensible()
+
+
+def test_regular_field_name_for_group_is_its_name():
+    field = IddField.load(
+        objectName="Some:Object", field_lines=["  N1 , \\field Speed 1 Rated Flow", "       \\type real"]
+    )
+    assert not field.extensible
+    assert field.name == "Speed 1 Rated Flow"
+    assert field.name_for_group(2) == "Speed 1 Rated Flow"
