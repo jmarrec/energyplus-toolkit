@@ -1007,3 +1007,137 @@ DesignDayLike,
 
     assert choice_line.strip().startswith(","), f"Expected blank choice field, got: {choice_line!r}"
     assert real_line.strip().startswith(";"), f"Expected blank real field, got: {real_line!r}"
+
+
+# ---------------------------------------------------------------------------
+# \format vertices: X, Y and Z of a vertex on one line, like EnergyPlus' Transition writes them
+# ---------------------------------------------------------------------------
+
+SHADING_SITE_DETAILED_IDD = """\
+Shading:Site:Detailed,
+       \\memo Used for shading elements such as trees
+       \\extensible:3
+       \\format vertices
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+  N1 , \\field Number of Vertices
+       \\type integer
+       \\minimum 3
+       \\autocalculatable
+       \\default autocalculate
+  N2 , \\field Vertex 1 X-coordinate
+       \\begin-extensible
+       \\type real
+       \\units m
+  N3 , \\field Vertex 1 Y-coordinate
+       \\type real
+       \\units m
+  N4 ; \\field Vertex 1 Z-coordinate
+       \\type real
+       \\units m
+"""
+
+# Its vertices are regular fields (a window has 3 or 4)
+FENESTRATION_IDD = """\
+FenestrationSurface:Detailed,
+       \\format vertices
+  A1 , \\field Name
+       \\type alpha
+  N1 , \\field Number of Vertices
+       \\type integer
+       \\autocalculatable
+       \\default autocalculate
+  N2 , \\field Vertex 1 X-coordinate
+       \\units m
+  N3 , \\field Vertex 1 Y-coordinate
+       \\units m
+  N4 , \\field Vertex 1 Z-coordinate
+       \\units m
+  N5 , \\field Vertex 2 X-coordinate
+       \\units m
+  N6 , \\field Vertex 2 Y-coordinate
+       \\units m
+  N7 ; \\field Vertex 2 Z-coordinate
+       \\units m
+"""
+
+# Zone has \\format vertices, but its origin isn't a vertex
+ZONE_ORIGIN_IDD = """\
+Zone,
+       \\format vertices
+  A1 , \\field Name
+       \\type alpha
+  N1 , \\field X Origin
+       \\units m
+  N2 , \\field Y Origin
+       \\units m
+  N3 ; \\field Z Origin
+       \\units m
+"""
+
+
+def test_idf_object_str_format_vertices_extensible():
+    obj = IdfObject.load(make_idd_object(SHADING_SITE_DETAILED_IDD), "Shading:Site:Detailed,S,3,0,0,4.572,1,0,0,1,1,0;")
+    assert str(obj) == "\n".join(
+        [
+            "Shading:Site:Detailed,",
+            "  S,                       !- Name",
+            "  3,                       !- Number of Vertices",
+            "  0.0,0.0,4.572,  !- X,Y,Z ==> Vertex 1 {m}",
+            "  1.0,0.0,0.0,  !- X,Y,Z ==> Vertex 2 {m}",
+            "  1.0,1.0,0.0;  !- X,Y,Z ==> Vertex 3 {m}",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_vertices_regular_fields():
+    obj = IdfObject.load(make_idd_object(FENESTRATION_IDD), "FenestrationSurface:Detailed,W,2,0,0,1,0,0,0;")
+    assert str(obj) == "\n".join(
+        [
+            "FenestrationSurface:Detailed,",
+            "  W,                       !- Name",
+            "  2,                       !- Number of Vertices",
+            "  0.0,0.0,1.0,  !- X,Y,Z ==> Vertex 1 {m}",
+            "  0.0,0.0,0.0;  !- X,Y,Z ==> Vertex 2 {m}",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_vertices_zone_origin_isnt_a_vertex():
+    obj = IdfObject.load(make_idd_object(ZONE_ORIGIN_IDD), "Zone,Z1,1,2,3;")
+    assert str(obj) == "\n".join(
+        [
+            "Zone,",
+            "  Z1,                      !- Name",
+            "  1.0,                     !- X Origin {m}",
+            "  2.0,                     !- Y Origin {m}",
+            "  3.0;                     !- Z Origin {m}",
+            "",
+        ]
+    )
+
+
+def test_idf_object_str_format_vertices_custom_comment_on_z_is_kept():
+    """A custom comment ends up on the last field of the line, Z: it's kept on the vertex line."""
+    obj = IdfObject.load(
+        make_idd_object(SHADING_SITE_DETAILED_IDD),
+        "Shading:Site:Detailed,S,,\n  0,0,1,\n  1,0,0,\n  1,1,0;  ! My vertex\n",
+    )
+    assert str(obj).splitlines()[-1] == "  1.0,1.0,0.0;  ! My vertex"
+
+
+def test_idf_object_str_format_vertices_custom_comment_on_x_keeps_one_field_per_line():
+    """It can't be on the vertex line without being moved: that vertex is written one field per line."""
+    obj = IdfObject.load(
+        make_idd_object(SHADING_SITE_DETAILED_IDD),
+        "Shading:Site:Detailed,S,,\n  0,0,1,\n  1,0,0,\n  1,  ! My X\n  1,0;\n",
+    )
+    assert str(obj).splitlines()[-4:] == [
+        "  1.0,0.0,0.0,  !- X,Y,Z ==> Vertex 2 {m}",
+        "  1.0,                     ! My X",
+        "  1.0,                     !- Vertex 3 Y-coordinate {m}",
+        "  0.0;                     !- Vertex 3 Z-coordinate {m}",
+    ]

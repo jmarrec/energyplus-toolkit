@@ -1,4 +1,6 @@
+import itertools
 import logging
+import re
 from typing import NamedTuple
 
 from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
@@ -16,6 +18,50 @@ class FieldToWrite(NamedTuple):
 
     field: IdfField
     name: str
+
+
+_VERTEX_FIELD_RE = re.compile(r"Vertex ([0-9]+) ([XYZ])-coordinate", re.IGNORECASE)
+
+
+def _vertex_number(name: str) -> str | None:
+    """The vertex number: "2" for "Vertex 2 X-coordinate", None if it isn't a vertex coordinate (eg Zone's "X Origin").
+
+    Found by name, so it works for extensible vertices (named by group) and for regular ones
+    (FenestrationSurface:Detailed).
+    """
+    m = _VERTEX_FIELD_RE.fullmatch(name)
+    return m.group(1) if m else None
+
+
+def _vertex_line(fields: tuple[IdfField, IdfField, IdfField], vertex: str, is_last_field: bool) -> str:
+    """One vertex on one line, like EnergyPlus' Transition writes it: "0,0,3,  !- X,Y,Z ==> Vertex 1 {m}".
+
+    The comment is always 2 spaces after the values, it isn't aligned on the other fields' comments.
+    """
+    x, _, z = fields
+    indent = " " * (idf_constants.IDF_LEADING + idf_constants.IDF_INDENT)
+    values = ",".join(f.value_text() for f in fields) + (";" if is_last_field else ",")
+    if z.comment is not None:
+        return f"{indent}{values}  ! {z.comment}"
+    units = x.idd_field.properties.units
+    return f"{indent}{values}  !- X,Y,Z ==> Vertex {vertex}" + (f" {{{units}}}" if units else "")
+
+
+def _vertices_format_lines(entries: list[FieldToWrite]) -> list[str]:
+    """\\format vertices: the X, Y and Z of a vertex on one line, the other fields one per line."""
+    last_field = entries[-1].field
+    lines = []
+    # groupby only groups CONSECUTIVE entries with the same key (unlike pandas), so the order is kept: the regular
+    # fields before, between and after the vertices each make their own group (key None), and each vertex its own
+    for vertex, group in itertools.groupby(entries, key=lambda entry: _vertex_number(entry.name)):
+        group_entries = list(group)
+        fields = tuple(entry.field for entry in group_entries)
+        # A custom comment ends up on the last field of a line: only Z's can be kept on the vertex line
+        if vertex is not None and len(fields) == 3 and all(f.comment is None for f in fields[:2]):
+            lines.append(_vertex_line(fields, vertex, is_last_field=fields[-1] is last_field))
+        else:
+            lines.extend(f.text(is_last_field=f is last_field, field_name=name) for f, name in group_entries)
+    return lines
 
 
 class IdfObjectError(ValueError):
@@ -378,8 +424,11 @@ class IdfObject:
                 for i, group in enumerate(self._extensible_groups)
                 for f in group
             ]
-            for i, (field, name) in enumerate(entries):
-                lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))
+            if self.idd_object.properties.format == IddObjectFormat.Vertices:
+                lines.extend(_vertices_format_lines(entries))
+            else:
+                for i, (field, name) in enumerate(entries):
+                    lines.append(field.text(is_last_field=i == len(entries) - 1, field_name=name))
 
         lines.append("")  # blank line at end
         return "\n".join(lines)
