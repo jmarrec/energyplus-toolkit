@@ -3,7 +3,7 @@
 Reformats the IDF snippets embedded in EnergyPlus C++ unit tests (`*.unit.cc`).
 
 ```
-python -m energyplus_parser.cli reformat_unit_test Foo.unit.cc --idd Energy+.idd [-o out.cc | -o -] [--overwrite]
+energyplus-toolkit format unit-test --idd Energy+.idd Foo.unit.cc [tst/EnergyPlus/unit ...] [--check | --diff | -o out.cc]
 ```
 
 Everything is in `unit_test_file.py`.

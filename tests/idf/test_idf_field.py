@@ -2,10 +2,10 @@ import logging
 
 import pytest
 
-from energyplus_parser.idd.idd_field import BoundTypes, IddField
-from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_field import (
+from energyplus_toolkit.input.idd.idd_field import BoundTypes, IddField
+from energyplus_toolkit.input.idd.idd_object import IddObject
+from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.idf.idf_field import (
     ChoiceField,
     DayTypeListField,
     FieldValidationError,

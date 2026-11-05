@@ -4,26 +4,26 @@
 # Files are reformatted in place: pre-commit then fails if any was changed, so you can review and stage them.
 # require_serial: the CLI runs its own process pool and loads the IDD once.
 
-- id: energyplus-reformat-idf
+- id: energyplus-format-idf
   name: Reformat EnergyPlus IDF files
   description: Reformat IDF files (IMF and parametric files are skipped, nothing is ever lost).
-  entry: energyplus-parser reformat_idf
+  entry: energyplus-toolkit format idf
   language: python
   files: \.idf$
   require_serial: true
 
-- id: energyplus-reformat-idd
+- id: energyplus-format-idd
   name: Reformat EnergyPlus IDD files
   description: Reformat IDD files (Energy+.idd, Energy+.idd.in).
-  entry: energyplus-parser reformat_idd
+  entry: energyplus-toolkit format idd
   language: python
   files: \.idd(\.in)?$
   require_serial: true
 
-- id: energyplus-reformat-unit-test
+- id: energyplus-format-unit-test
   name: Reformat the IDF in EnergyPlus C++ unit tests
   description: Reformat the IDF in delimited_string({...}) and R"IDF(...)IDF" blocks. Run clang-format after it.
-  entry: energyplus-parser reformat_unit_test
+  entry: energyplus-toolkit format unit-test
   language: python
   files: \.unit\.cc$
   require_serial: true

@@ -1,4 +1,4 @@
-"""Top-level package for energyplus-parser."""
+"""Top-level package for energyplus-toolkit."""
 
 __author__ = """Julien Marrec"""
 __email__ = 'contact@effibem.com'

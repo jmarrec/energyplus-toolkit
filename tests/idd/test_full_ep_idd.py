@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from energyplus_parser.idd.idd_file import IddFile
+from energyplus_toolkit.input.idd.idd_file import IddFile
 
 
 def test_full_ep_idd():

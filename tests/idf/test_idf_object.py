@@ -1,9 +1,9 @@
 import pytest
 
-from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_field import FieldValidationError, NumericMode
-from energyplus_parser.idf.idf_object import IdfObject, IdfObjectError
+from energyplus_toolkit.input.idd.idd_object import IddObject
+from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.idf.idf_field import FieldValidationError, NumericMode
+from energyplus_toolkit.input.idf.idf_object import IdfObject, IdfObjectError
 
 # ---------------------------------------------------------------------------
 # Helpers: build IddObjects from inline IDD text
@@ -766,7 +766,7 @@ SimulationControl,
 @pytest.mark.parametrize("leading", [0, 2, 4])
 def test_idf_object_str_exact_simulation_control(monkeypatch, leading):
     """Serialisation matches the canonical EnergyPlus IDF format for IDF_LEADING=0 and 2."""
-    from energyplus_parser.idf import idf_constants
+    from energyplus_toolkit.input.idf import idf_constants
 
     monkeypatch.setattr(idf_constants, "IDF_LEADING", leading)
 

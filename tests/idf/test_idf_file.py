@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from energyplus_parser.idd.idd_file import IddFile
-from energyplus_parser.idd.idd_object import IddObject
-from energyplus_parser.idf.idf_file import IdfFile, split_objects_on_one_line
-from energyplus_parser.idf.idf_object import IdfObject
+from energyplus_toolkit.input.idd.idd_file import IddFile
+from energyplus_toolkit.input.idd.idd_object import IddObject
+from energyplus_toolkit.input.idf.idf_file import IdfFile, split_objects_on_one_line
+from energyplus_toolkit.input.idf.idf_object import IdfObject
 
 RESOURCES = Path(__file__).parent.parent / "resources"
 
@@ -486,7 +486,7 @@ Zone, ! This is also understood as an object comment
 def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
     """Load the 1ZoneUncontrolled IDF, serialise with IDF_LEADING=2, and verify
     structural and spot-check properties of the output."""
-    from energyplus_parser.idf import idf_constants
+    from energyplus_toolkit.input.idf import idf_constants
 
     idf_path = RESOURCES / "1ZoneUncontrolled-V26-1-0.idf"
     idf = IdfFile.load(idf_path, ep_idd)

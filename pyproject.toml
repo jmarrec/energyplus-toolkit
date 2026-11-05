@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "energyplus-parser"
+name = "energyplus-toolkit"
 version = "0.0.1"
-description = "A Python parser for EnergyPlus IDD and IDF files."
+description = "Tools for EnergyPlus input files: parse, write back and reformat IDD and IDF files, and the IDF in EnergyPlus C++ unit tests."
 authors = [
     {name = "Julien Marrec", email = "contact@effibem.com"},
 ]
@@ -25,12 +25,12 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://effibem.com"
-Repository = "https://github.com/jmarrec/energyplus-python-parser"
-Changelog = "https://github.com/jmarrec/energyplus-python-parser/blob/main/CHANGELOG.md"
-Issues = "https://github.com/jmarrec/energyplus-python-parser/issues"
+Repository = "https://github.com/jmarrec/energyplus-toolkit"
+Changelog = "https://github.com/jmarrec/energyplus-toolkit/blob/main/CHANGELOG.md"
+Issues = "https://github.com/jmarrec/energyplus-toolkit/issues"
 
 [project.scripts]
-energyplus-parser = "energyplus_parser.cli:main"
+energyplus-toolkit = "energyplus_toolkit.cli:main"
 
 [project.optional-dependencies]
 test = [
@@ -87,7 +87,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 omit = [
-    "energyplus_parser/__main__.py",
+    "energyplus_toolkit/__main__.py",
 ]
 
 [tool.tox]
@@ -99,13 +99,13 @@ env_list = ["3.13", "3.12", "3.11", "type"]
 description = "Run tests under {base_python}"
 extras = ["test"]
 allowlist_externals = ["pytest"]
-commands = [["pytest", "--cov={envsitepackagesdir}/energyplus_parser", "--cov-branch", "--cov-report=xml", "--cov-report=term-missing"]]
+commands = [["pytest", "--cov={envsitepackagesdir}/energyplus_toolkit", "--cov-branch", "--cov-report=xml", "--cov-report=term-missing"]]
 
 [tool.tox.env.type]
 description = "Run type checks on code base"
 extras = ["dev"]
 allowlist_externals = ["mypy"]
 commands = [
-    ["mypy", "energyplus_parser"],
+    ["mypy", "energyplus_toolkit"],
     ["mypy", "tests"],
 ]

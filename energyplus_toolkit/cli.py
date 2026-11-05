@@ -1,7 +1,7 @@
-"""Command-line interface for the EnergyPlus IDF/IDD parser.
+"""Command-line interface: energyplus-toolkit COMMAND ...
 
-Works like black: give it files and/or folders, they are reformatted in place, in parallel. Use --check or --diff to
-only see what would change.
+energyplus-toolkit format idf|idd|unit-test PATH...: works like black, give it files and/or folders, they are
+reformatted in place, in parallel. Use --check or --diff to only see what would change.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ import re
 import sys
 from pathlib import Path
 
-from energyplus_parser import runner
-from energyplus_parser.idf import idf_constants
-from energyplus_parser.runner import Job, Kind, Mode
+from energyplus_toolkit.format import runner
+from energyplus_toolkit.format.runner import Job, Kind, Mode
+from energyplus_toolkit.input.idf import idf_constants
 
 DESCRIPTIONS = {
     Kind.IDF: "Reformat EnergyPlus IDF files.",
@@ -24,7 +24,7 @@ DESCRIPTIONS = {
 }
 
 
-def _add_subcommand(subparsers, name: str, kind: Kind) -> None:
+def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
     p = subparsers.add_parser(name, help=DESCRIPTIONS[kind], description=DESCRIPTIONS[kind])
     patterns = ", ".join(f"*{s}" for s in kind.suffixes)
     p.add_argument(
@@ -84,12 +84,18 @@ def _add_subcommand(subparsers, name: str, kind: Kind) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="energyplus-parser", description="Reformat EnergyPlus files.")
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
-    subparsers.required = True
-    _add_subcommand(subparsers, "reformat_idf", Kind.IDF)
-    _add_subcommand(subparsers, "reformat_idd", Kind.IDD)
-    _add_subcommand(subparsers, "reformat_unit_test", Kind.UNIT_TEST)
+    parser = argparse.ArgumentParser(prog="energyplus-toolkit", description="Tools for EnergyPlus input files.")
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND")
+    commands.required = True
+
+    format_parser = commands.add_parser(
+        "format", help="Reformat EnergyPlus files.", description="Reformat EnergyPlus files."
+    )
+    kinds = format_parser.add_subparsers(dest="kind_name", metavar="KIND")
+    kinds.required = True
+    _add_format_subcommand(kinds, "idf", Kind.IDF)
+    _add_format_subcommand(kinds, "idd", Kind.IDD)
+    _add_format_subcommand(kinds, "unit-test", Kind.UNIT_TEST)
     return parser
 
 

@@ -3,9 +3,9 @@ import math
 import re
 from enum import StrEnum
 
-from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_field import IddField
-from energyplus_parser.idd.idd_regex import RE_FIELD_START
+from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
+from energyplus_toolkit.input.idd.idd_field import IddField
+from energyplus_toolkit.input.idd.idd_regex import RE_FIELD_START
 
 LOG = logging.getLogger("IddObject")
 LOG.setLevel(logging.INFO)

@@ -1,4 +1,4 @@
-from energyplus_parser.idf.idf_field import IdfField
+from energyplus_toolkit.input.idf.idf_field import IdfField
 
 
 class MethodCheckerError(Exception):

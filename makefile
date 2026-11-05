@@ -1,4 +1,4 @@
-sources = energyplus_parser
+sources = energyplus_toolkit
 
 .PHONY: test format lint unittest coverage pre-commit clean
 test: format lint unittest

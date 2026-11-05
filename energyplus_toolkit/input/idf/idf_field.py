@@ -3,10 +3,10 @@ import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
 
-from energyplus_parser.idd.idd_constants import AUTOSIZE_VALUE
-from energyplus_parser.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
-from energyplus_parser.idf import idf_constants
-from energyplus_parser.idf.idf_constants import format_idf_field
+from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE
+from energyplus_toolkit.input.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
+from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.idf.idf_constants import format_idf_field
 
 LOG = logging.getLogger("IdfField")
 
