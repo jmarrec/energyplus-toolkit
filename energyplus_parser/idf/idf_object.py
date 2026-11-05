@@ -1,7 +1,7 @@
 import logging
 
 from energyplus_parser.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
-from energyplus_parser.idd.idd_object import IddObject
+from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat
 from energyplus_parser.idf import idf_constants
 from energyplus_parser.idf.idf_field import IdfField, IntegerField, NumericField, NumericMode, RealField
 
@@ -352,7 +352,7 @@ class IdfObject:
 
         indent = " " * idf_constants.IDF_LEADING
 
-        if self.idd_object.properties.format.lower() == "singleline":
+        if self.idd_object.properties.format == IddObjectFormat.SingleLine:
             if not all_fields:
                 lines.append(f"{indent}{self.idd_object.name};")
             else:

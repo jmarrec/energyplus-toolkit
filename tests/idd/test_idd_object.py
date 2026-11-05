@@ -1,7 +1,7 @@
 import pytest
 
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
-from energyplus_parser.idd.idd_object import IddObject, IddObjectProperties
+from energyplus_parser.idd.idd_object import IddObject, IddObjectFormat, IddObjectProperties
 
 
 def test_idd_object_properties() -> None:
@@ -15,7 +15,7 @@ def test_idd_object_properties() -> None:
     obj_props.extensible = True
     obj_props.numExtensible = 2
     obj_props.numExtensibleGroupsRequired = 1
-    obj_props.format = ""
+    obj_props.format = None
     obj_props.minFields = 5
     obj_props.maxFields = 10
     expected = "\n".join(
@@ -134,7 +134,7 @@ def test_parse_idd_object_required_unique() -> None:
     assert obj_props.required
     assert not obj_props.obsolete
     assert not obj_props.hasUrl
-    assert obj_props.format == ""
+    assert obj_props.format is None
 
     assert not obj_props.extensible
     assert obj_props.numExtensible == 0
@@ -192,7 +192,7 @@ def test_parse_idd_object_with_one_extensible() -> None:
     assert not obj_props.required
     assert not obj_props.obsolete
     assert not obj_props.hasUrl
-    assert obj_props.format == ""
+    assert obj_props.format is None
 
     assert obj_props.extensible
     assert obj_props.numExtensible == 2
@@ -543,3 +543,29 @@ def test_extensible_field_names_keep_the_group_number() -> None:
     assert r"\field Vertex 1 X-coordinate" in text
     assert r"\field DayType List 1" in text
     assert text == ori_text
+
+
+@pytest.mark.parametrize("idd_format", list(IddObjectFormat))
+def test_parse_idd_object_format(idd_format) -> None:
+    """\\format is spelled as in the IDD ("compactSchedule", "FluidProperty"...), and written back that way."""
+    ori_text = rf"""Some:Object,
+       \format {idd_format.value}
+  A1 ; \field Name
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Test", object_lines=ori_text.splitlines())
+    assert idd_obj.properties.format == idd_format
+    assert str(idd_obj) == ori_text
+
+
+def test_parse_idd_object_format_is_case_insensitive() -> None:
+    assert IddObjectFormat.parse("CompactSchedule") == IddObjectFormat.CompactSchedule
+    assert IddObjectFormat.parse("SINGLELINE") == IddObjectFormat.SingleLine
+
+
+@pytest.mark.parametrize("text", ["FluidProperties", "ViewFactors", "Banana"])
+def test_parse_idd_object_unknown_format_is_an_error(text) -> None:
+    """The IDD's documentation says "FluidProperties" and "ViewFactors", but the IDD uses "FluidProperty" and
+    "ViewFactor": only those are accepted."""
+    with pytest.raises(ValueError, match="Unknown \\\\format"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\format {text}", "  A1 ; \\field Name"])

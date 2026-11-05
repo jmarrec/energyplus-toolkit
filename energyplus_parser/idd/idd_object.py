@@ -1,6 +1,7 @@
 import logging
 import math
 import re
+from enum import StrEnum
 
 from energyplus_parser.idd.idd_constants import BLOCK_INDENT
 from energyplus_parser.idd.idd_field import IddField
@@ -8,6 +9,29 @@ from energyplus_parser.idd.idd_regex import RE_FIELD_START
 
 LOG = logging.getLogger("IddObject")
 LOG.setLevel(logging.INFO)
+
+
+class IddObjectFormat(StrEnum):
+    """\\format: how IDF Editor writes the object, with its "special format" option.
+
+    The values are spelled as in the IDD, which isn't always as in its documentation ("compactSchedule", not
+    "CompactSchedule", "FluidProperty", not "FluidProperties", "ViewFactor", not "ViewFactors").
+    """
+
+    SingleLine = "singleLine"  # all the fields on one line
+    Vertices = "vertices"  # X, Y and Z of a vertex on one line
+    CompactSchedule = "compactSchedule"
+    FluidProperty = "FluidProperty"  # ten values per line
+    ViewFactor = "ViewFactor"  # three fields per line
+    Spectral = "Spectral"  # four fields per line
+
+    @classmethod
+    def parse(cls, text: str) -> "IddObjectFormat":
+        """Case insensitive. Raises ValueError for an unknown format."""
+        for member in cls:
+            if member.value.lower() == text.lower():
+                return member
+        raise ValueError(f"Unknown \\format '{text}', expected one of: {', '.join(m.value for m in cls)}")
 
 
 class IddObjectProperties:
@@ -36,9 +60,9 @@ class IddObjectProperties:
         # Returns the minimum number of extensible groups an IdfObject following this schema must have to be valid.
         self.numExtensibleGroupsRequired: int = 0
 
-        # Formatting markup for this object. Often empty. Contains suggestions for printing certain
-        # types of IdfObjects. For instance, many geometric objects have \\format vertices.
-        self.format: str = ""
+        # Formatting markup for this object, None if it has none. Suggests how to print certain types of IdfObjects.
+        # For instance, many geometric objects have \\format vertices.
+        self.format: IddObjectFormat | None = None
 
         # Minimum number of fields required for an IdfObject to be valid according to this schema.
         self.minFields: int = 0
@@ -66,8 +90,8 @@ class IddObjectProperties:
             lines.append(f"{BLOCK_INDENT}\\url-object")
         if self.extensible:
             lines.append(f"{BLOCK_INDENT}\\extensible:{self.numExtensible}")
-        if self.format:
-            lines.append(f"{BLOCK_INDENT}\\format {self.format}")
+        if self.format is not None:
+            lines.append(f"{BLOCK_INDENT}\\format {self.format.value}")
         if self.minFields > 0:
             lines.append(f"{BLOCK_INDENT}\\min-fields {self.minFields}")
         if self.maxFields is not None:
@@ -162,8 +186,10 @@ class IddObject:
                 self.properties.extensible = True
                 self.properties.numExtensible = int(num_extensible_str)
             elif line.startswith(tag := '\\format'):
-                format_text = line[len(tag) :].strip()
-                self.properties.format = format_text
+                try:
+                    self.properties.format = IddObjectFormat.parse(line[len(tag) :].strip())
+                except ValueError as exc:
+                    raise ValueError(f"{exc} in object '{self.name}'") from None
             elif has_fields and line.startswith('A') or line.startswith('N'):
                 found_fields_start = True
                 break
