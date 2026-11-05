@@ -569,3 +569,20 @@ def test_parse_idd_object_unknown_format_is_an_error(text) -> None:
     "ViewFactor": only those are accepted."""
     with pytest.raises(ValueError, match="Unknown \\\\format"):
         IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\format {text}", "  A1 ; \\field Name"])
+
+
+def test_parse_idd_object_begin_extensible_on_last_field() -> None:
+    """A one-field extensible group declared last (nothing after it) was taken for a regular field: the last field of an
+    object was added without checking its \\begin-extensible."""
+    ori_text = r"""Schedule:Compact,
+       \extensible:1
+  A1 , \field Name
+       \type alpha
+  A2 ; \field Field 1
+       \begin-extensible
+       \type alpha
+"""
+    idd_obj = IddObject.load(group="Schedules", object_lines=ori_text.splitlines())
+    assert [f.name for f in idd_obj.fields] == ["Name"]
+    assert [f.name for f in idd_obj.extensible_fields] == ["Field"]
+    assert str(idd_obj) == ori_text

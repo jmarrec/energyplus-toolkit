@@ -232,21 +232,7 @@ class IddObject:
                 end_index = line_number
                 field_lines = object_lines[start_index:end_index]
                 field = IddField.load(objectName=self.name, field_lines=field_lines)
-
-                if field.properties.beginExtensible:
-                    if found_begin_extensible:
-                        raise ValueError(f"Multiple begin-extensible fields found in object '{self.name}'")
-                    if self.properties.extensible:
-                        found_begin_extensible = True
-                    else:
-                        raise ValueError(
-                            f"Begin-extensible field found in non-extensible object "
-                            f"'{self.name}' for field '{field.name}'"
-                        )
-                if found_begin_extensible:
-                    self.extensible_fields.append(field)
-                else:
-                    self.fields.append(field)
+                found_begin_extensible = self._add_field(field, found_begin_extensible)
                 start_index = line_number
 
             if found_begin_extensible and len(self.extensible_fields) == self.properties.numExtensible:
@@ -261,10 +247,7 @@ class IddObject:
         if start_index < n_lines:
             field_lines = object_lines[start_index:]
             field = IddField.load(objectName=self.name, field_lines=field_lines)
-            if found_begin_extensible:
-                self.extensible_fields.append(field)
-            else:
-                self.fields.append(field)
+            self._add_field(field, found_begin_extensible)
 
         for field in self.fields + self.extensible_fields:
             field.unnamed = field.field_id in unnamed_ids
@@ -279,6 +262,25 @@ class IddObject:
                     numerator = self.properties.minFields - len(self.fields)
                     denominator = self.properties.numExtensible
                     self.properties.numExtensibleGroupsRequired = math.ceil(numerator / denominator)
+
+    def _add_field(self, field: IddField, found_begin_extensible: bool) -> bool:
+        """Add a parsed field to the regular or the extensible fields.
+
+        Returns whether the extensible group has started, with this field's \\begin-extensible or before it.
+        """
+        if field.properties.beginExtensible:
+            if found_begin_extensible:
+                raise ValueError(f"Multiple begin-extensible fields found in object '{self.name}'")
+            if not self.properties.extensible:
+                raise ValueError(
+                    f"Begin-extensible field found in non-extensible object '{self.name}' for field '{field.name}'"
+                )
+            found_begin_extensible = True
+        if found_begin_extensible:
+            self.extensible_fields.append(field)
+        else:
+            self.fields.append(field)
+        return found_begin_extensible
 
     def __repr__(self) -> str:
         return self.name
