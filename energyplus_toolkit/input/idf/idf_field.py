@@ -377,7 +377,7 @@ class RealField(NumericField):
             or self.idd_field.name.lower() in idf_constants.IDF_KEEP_INTEGER_REALS_FIELDS
         )
         if keep_integer and self._written_as_integer and isinstance(v, float):
-            return str(int(v))
+            return f"{v:.0f}"  # not str(int(v)): it would lose the sign of -0
         return super().value_text()
 
     def _parse_number(self, value: str) -> float:

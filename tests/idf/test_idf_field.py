@@ -431,3 +431,27 @@ def test_autosize_warning_says_where(caplog):
     with caplog.at_level(logging.WARNING, logger="IdfField"):
         field.setString("autosize")
     assert any(m.startswith("In 'Some:Object', field 'Value': Field is autocalculatable") for m in caplog.messages)
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("-0", "-0"),
+        ("0", "0"),
+        ("+0", "0"),
+        ("-5", "-5"),
+        ("007", "7"),
+        ("10000000000000000000000", "10000000000000000000000"),
+    ],
+)
+def test_keep_integer_reals_value_text(monkeypatch, value, expected):
+    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+    field = _field(["  N1 , \\field Value", "       \\type real"])
+    field.setString(value)
+    assert field.value_text() == expected
+
+
+def test_negative_zero_without_keep_integer_reals():
+    field = _field(["  N1 , \\field Value", "       \\type real"])
+    field.setString("-0")
+    assert field.value_text() == "-0.0"
