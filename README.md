@@ -54,7 +54,7 @@ parametric file, C++ code building the IDF...) is left unchanged, with a warning
 
 ```yaml
 - repo: https://github.com/jmarrec/energyplus-toolkit
-  rev: v0.2.1
+  rev: v0.2.2
   hooks:
   - id: energyplus-format-idd
     args: [-q]
