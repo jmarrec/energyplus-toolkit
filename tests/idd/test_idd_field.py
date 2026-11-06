@@ -5,6 +5,7 @@ import pytest
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
 from energyplus_toolkit.input.idd.idd_field import (
     BoundTypes,
+    FieldTypeChar,
     IddField,
     IddFieldParseError,
     IddFieldProperties,
@@ -494,3 +495,36 @@ def test_parse_idd_units_based_on_field():
     assert field.properties.unitsBasedOnField == "A2"
     assert field.properties.units is None
     assert str(field) == ori_text
+
+
+@pytest.mark.parametrize(
+    "field_id, field_type, expected",
+    [
+        ("A1", "alpha", FieldTypeChar.Alpha),
+        ("A12", "choice", FieldTypeChar.Alpha),
+        ("N1", "real", FieldTypeChar.Numeric),
+        ("N12", "choice", FieldTypeChar.Numeric),  # eg WindowMaterial:Screen: the type doesn't say it
+    ],
+)
+def test_field_type_char(field_id, field_type, expected):
+    field_lines = [f"  {field_id} , \\field Name", f"       \\type {field_type}", "       \\key Yes"]
+    field = IddField.load(objectName="Some:Object", field_lines=field_lines)
+    assert field.field_type_char == expected
+
+
+def test_alpha_field_with_keys_and_no_type_is_a_choice(caplog):
+    """Output:Table:ReportPeriod "Report Name" (V22-2-0 to V25-1-0): it has \\key lines, but no \\type choice."""
+    with caplog.at_level(logging.WARNING, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\key Yes"])
+    assert field.properties.type == IddFieldType.ChoiceType
+    assert "\\type choice" in str(field)
+    assert "In 'Some:Object', field 'Name': Field has keys but no \\type: assuming choice" in caplog.text
+
+
+@pytest.mark.parametrize("field_type", ["alpha", "node"])
+def test_explicit_type_with_keys_is_kept(caplog, field_type):
+    field_lines = ["  A1 , \\field Name", f"       \\type {field_type}", "       \\key Yes"]
+    with caplog.at_level(logging.ERROR, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=field_lines)
+    assert field.properties.type == IddFieldType(field_type)
+    assert "Field is not of type choice but has non-empty keys" in caplog.text

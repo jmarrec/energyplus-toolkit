@@ -13,6 +13,25 @@ class IddFieldParseError(Exception):
     pass
 
 
+class FieldTypeChar(IntEnum):
+    """Field type character enumeration."""
+
+    UnknownType = -1
+    Alpha = 0
+    Numeric = 1
+
+    @classmethod
+    def from_char(cls, char: str) -> "FieldTypeChar":
+        """Get the FieldTypeChar from a character."""
+        c = char.lower()
+        if c == "a":
+            return cls.Alpha
+        elif c == "n":
+            return cls.Numeric
+        else:
+            return cls.UnknownType
+
+
 class IddFieldType(StrEnum):
     """IDD Field type.
 
@@ -29,6 +48,24 @@ class IddFieldType(StrEnum):
     ExternalListType = "external-list"
     URLType = "url"
     HandleType = "handle"
+
+    @staticmethod
+    def allowable_types_for_field_char(fieldTypeChar: FieldTypeChar) -> set["IddFieldType"]:
+        if fieldTypeChar == FieldTypeChar.Numeric:
+            # Some numeric fields are choices, on purpose
+            return {IddFieldType.IntegerType, IddFieldType.RealType, IddFieldType.ChoiceType}
+        elif fieldTypeChar == FieldTypeChar.Alpha:
+            return {
+                IddFieldType.AlphaType,
+                IddFieldType.ChoiceType,
+                IddFieldType.NodeType,
+                IddFieldType.ObjectListType,
+                IddFieldType.ExternalListType,
+                IddFieldType.URLType,
+                IddFieldType.HandleType,
+            }
+
+        raise ValueError(f"Invalid field type character: {fieldTypeChar}")
 
 
 class BoundTypes(IntEnum):
@@ -260,6 +297,9 @@ class IddField:
         # The field name. For an extensible field, without the group number: see markExtensible
         self.name: str = ""
         self.field_id: str = ""
+        # Alpha or Numeric, from the first letter of field_id.
+        # Not the same as properties.type: an N field can be a choice
+        self.field_type_char: FieldTypeChar = FieldTypeChar.UnknownType
         # Declared without a \field name, on a compact line ("N1, N2, N3,"): written back that way
         self.unnamed: bool = False
         self.objectName: str = objectName  # Name of IddObject to which this field belongs
@@ -312,15 +352,9 @@ class IddField:
         # === d ===
         elif index == 'd':
             if lower_text.startswith(tag := "default"):
-                string_default = text[len(tag) :].split('!')[0].strip()
-                self.properties.stringDefault = string_default
+                # We'll parse the numeric value later, after we know the field type. For now just store it as a string.
+                self.properties.stringDefault = text[len(tag) :].split('!')[0].strip()
                 not_handled = False
-
-                if self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
-                    if any(x in lower_text for x in ['autosize', 'autocalculate']):
-                        self.properties.numericDefault = AUTOSIZE_VALUE
-                    else:
-                        self.properties.numericDefault = self._parse_float(tag=tag, value=string_default)
 
             elif lower_text.startswith("deprecated"):
                 self.properties.deprecated = True
@@ -467,17 +501,6 @@ class IddField:
 
         line_number += 1
 
-        fieldTypeChar = self.field_id[0]
-
-        # Determine type
-        if fieldTypeChar.lower() == "a":
-            self.properties.type = IddFieldType.AlphaType
-        elif fieldTypeChar.lower() == "n":
-            # Default numerics to real
-            self.properties.type = IddFieldType.RealType
-        else:
-            raise IddFieldParseError(self._format_error(f"Unknown field type identifier found: '{fieldTypeChar}'"))
-
         # Parse each metadata comment line (\keyword ...)
         while line_number < n_lines:
             line = field_lines[line_number]
@@ -495,6 +518,45 @@ class IddField:
             if not line or line.startswith('!'):
                 continue
             raise IddFieldParseError(self._format_error(f"Unexpected content found after field properties: '{line}'"))
+
+        self.field_type_char = FieldTypeChar.from_char(char=self.field_id[0])
+        if self.field_type_char == FieldTypeChar.UnknownType:
+            raise IddFieldParseError(self._format_error(f"Field ID '{self.field_id}' must start with 'A' or 'N'"))
+
+        # No \\type: go by the field id, and the keys
+        if self.properties.type == IddFieldType.UnknownType:
+            if self.field_type_char == FieldTypeChar.Alpha:
+                if self.keys:
+                    LOG.warning(self._format_error("Field has keys but no \\type: assuming choice"))
+                    self.properties.type = IddFieldType.ChoiceType
+                else:
+                    if self.name != self.field_id:  # compact fields ("N1, N2,") can't have a \type
+                        LOG.info(self._format_error("Field has no keys and no \\type: assuming alpha"))
+                    self.properties.type = IddFieldType.AlphaType
+
+            elif self.field_type_char == FieldTypeChar.Numeric:
+                # Default numerics to real
+                if self.name != self.field_id:  # compact fields ("N1, N2,") can't have a \type
+                    LOG.info(self._format_error("Field has no \\type: assuming real"))
+                self.properties.type = IddFieldType.RealType
+
+        else:
+            allowable_types = IddFieldType.allowable_types_for_field_char(fieldTypeChar=self.field_type_char)
+            if self.properties.type not in allowable_types:
+                LOG.warning(
+                    self._format_error(
+                        f"Field has \\type: {self.properties.type} but field ID '{self.field_id}' "
+                        "is not compatible with that type"
+                    )
+                )
+
+        # The type can come after the \\default
+        default = self.properties.stringDefault
+        if default is not None and self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
+            if any(x in default.lower() for x in ['autosize', 'autocalculate']):
+                self.properties.numericDefault = AUTOSIZE_VALUE
+            else:
+                self.properties.numericDefault = self._parse_float(tag="default", value=default)
 
         # Validation
         if self.properties.type == IddFieldType.ChoiceType and not self.keys:
