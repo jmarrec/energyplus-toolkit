@@ -10,8 +10,8 @@ Tools for [EnergyPlus](https://energyplus.net) input files:
 - reformat IDF and IDD files, and the IDF embedded in EnergyPlus C++ unit tests, from the command line or as
   pre-commit hooks.
 
-* GitHub: <https://github.com/jmarrec/energyplus-toolkit>
-* PyPI: <https://pypi.org/project/energyplus-toolkit/>
+- GitHub: <https://github.com/jmarrec/energyplus-toolkit>
+- PyPI: <https://pypi.org/project/energyplus-toolkit/>
 
 ## Installation
 
@@ -57,15 +57,19 @@ parametric file, C++ code building the IDF...) is left unchanged, with a warning
   rev: v0.2.1
   hooks:
   - id: energyplus-format-idd
-    args: [--idd, idd/Energy+.idd.in]
+    args: [-q]
+    # Example to limit to a specific file
+    files: ^idd/Energy\+\.idd\.in$
   - id: energyplus-format-idf
     args: [--idd, idd/Energy+.idd.in, -q]
   - id: energyplus-format-unit-test
     args: [--idd, idd/Energy+.idd.in, -q]
 ```
 
-Each hook needs the IDD to use (`--idd`). For unit tests, put the hook before clang-format: reformatting then
-clang-format is stable.
+The IDF and unit test hooks need the IDD to use (`--idd`); the IDD hook doesn't take it.
+`files` is optional: it limits a hook to the paths matching this regex, here the one IDD to format.
+
+**Note:** For unit tests, put the hook before clang-format: reformatting then clang-format is stable.
 
 ## Library
 
@@ -81,7 +85,7 @@ from energyplus_toolkit.input.idf.idf_object import IdfObject
 idd = IddFile.load(Path("Energy+.idd"))
 
 # A whole IDF file: each object is linked to its IDD object
-idf = IdfFile.load("in.idf", idd)  # or IdfFile.loads(text, idd)
+idf = IdfFile.load(Path("in.idf"), idd_file=idd)  # or IdfFile.loads(text, idd)
 for zone in idf.get_objects_by_type("Zone"):
     print(zone.name, zone.getDouble(1), zone.getDouble(1, return_default=True))  # "Z2 None 0.0" if left blank
 idf.save("out.idf", overwrite=True)  # or str(idf)
@@ -93,11 +97,16 @@ print(zone)
 # Zone,
 #   Z3,                      !- Name
 #   45.0;                    !- Direction of Relative North {deg}
+idf.add_object(obj=zone)
 
 # Or built from scratch, with extensible groups
 branch = IdfObject(idd_object=idd.getObject("Branch"))
 branch.setString(0, "Supply Branch")
 branch.push_extensible_group(["Pump:VariableSpeed", "Pump", "Pump-Inlet", "Pump-Outlet"])
+
+idf.remove_object(zone)
+idf.add_objects(objs=[zone, branch])
+assert idf.objects[-2:] == [zone, branch]
 
 # The IDD side
 field = idd.getObject("Zone").fields[1]
@@ -105,8 +114,8 @@ print(field.name, field.properties.type, field.properties.units, field.propertie
 # Direction of Relative North real deg 0
 ```
 
-Values are validated against the IDD when set (types, choices, bounds), and the IDF is written with its comments
-(`!- Field Name {units}`) and the layout the IDD asks for (`\format`: vertices, compact schedules...).
+Values are validated against the IDD when set: types, choices (the casing is normalized), bounds.
+The IDF is written with its comments (`!- Field Name {units}`) and the layout the IDD asks for (`\format`: vertices, compact schedules...).
 
 ## Layout
 
