@@ -38,13 +38,19 @@ class IdfField(ABC):
         # for an extensible field: its group in the parent
         self.group_index: int | None = group_index
 
+    @property
+    def name(self) -> str:
+        """The field name, numbered by group for an extensible field: "Vertex 3 X-coordinate"."""
+        if self.group_index is None:
+            return self.idd_field.name
+        return self.idd_field.name_for_group(self.group_index)
+
     def _format_error(self, error_msg: str) -> str:
         """Prefix ``error_msg`` with where it happened."""
         where = f"In '{self.idd_field.objectName}'"
         if self.parent is not None and (object_name := self.parent.name):
             where += f" named '{object_name}'"
-        name = self.idd_field.name if self.group_index is None else self.idd_field.name_for_group(self.group_index)
-        return f"{where}, field '{name}': {error_msg}"
+        return f"{where}, field '{self.name}': {error_msg}"
 
     @property
     def required(self):
@@ -114,12 +120,12 @@ class IdfField(ABC):
         v = self.value(return_default=False)
         return "" if v is None else str(v)
 
-    def text(self, is_last_field: bool = False, field_name: str | None = None) -> str:
-        """The field's IDF line. ``field_name`` (for the ``!-`` comment) defaults to the IDD field name."""
+    def text(self, is_last_field: bool = False) -> str:
+        """The field's IDF line."""
         return format_idf_field(
             value=self.value_text(),
             is_last_field=is_last_field,
-            field_name=self.idd_field.name if field_name is None else field_name,
+            field_name=self.name,
             comment=self.comment,
             units=self.idd_field.properties.units,
         )
