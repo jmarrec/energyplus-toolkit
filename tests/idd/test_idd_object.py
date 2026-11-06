@@ -603,6 +603,55 @@ def test_parse_idd_object_field_id_in_the_note_of_a_compact_line_is_not_a_field(
     assert idd_object._original_number_of_fields == 2
 
 
+@pytest.mark.parametrize(
+    "object_lines, expected",
+    [
+        (["  \\format nope", "  A1 ; \\field Name"], "Unknown \\\\format 'nope'"),
+        (["  \\nope", "  A1 ; \\field Name"], "Unknown property line '\\\\nope'"),
+        (["  \\memo Only a memo"], "No fields found"),
+        (["  \\min-fields abc", "  A1 ; \\field Name"], "Invalid \\\\min-fields value 'abc'"),
+        (["  \\max-fields", "  A1 ; \\field Name"], "Invalid \\\\max-fields value ''"),
+        (["  \\extensible:x", "  A1 ; \\field Name"], "Invalid \\\\extensible: value 'x'"),
+    ],
+)
+def test_parse_idd_object_error_says_where(object_lines, expected) -> None:
+    with pytest.raises(ValueError, match=f"^In 'Some:Object': {expected}"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", *object_lines])
+
+
+def test_parse_idd_object_multiple_begin_extensible_says_where() -> None:
+    object_lines = [
+        "Some:Object,",
+        "  \\extensible:2",
+        "  N1 , \\field V 1",
+        "       \\begin-extensible",
+        "  N2 ; \\field W 1",
+        "       \\begin-extensible",
+    ]
+    with pytest.raises(ValueError, match="^In 'Some:Object': Multiple begin-extensible fields found"):
+        IddObject.load(group="Test", object_lines=object_lines)
+
+
+def test_parse_idd_object_begin_extensible_in_non_extensible_says_where() -> None:
+    object_lines = ["Some:Object,", "  N1 ; \\field Height", "       \\begin-extensible"]
+    with pytest.raises(ValueError, match="^In 'Some:Object', field 'Height': Begin-extensible field found"):
+        IddObject.load(group="Test", object_lines=object_lines)
+
+
+def test_idd_object_cannot_adjust_fields_says_where() -> None:
+    """ZoneHVAC:HybridUnitaryHVAC in V9-1-0: the fields after the first extensible group aren't whole groups."""
+    object_lines = [
+        "Some:Object,",
+        "  \\extensible:2",
+        "  N1 , \\field V 1",
+        "       \\begin-extensible",
+        "  N2 , \\field W 1",
+        "  N3 ; \\field V 2",
+    ]
+    with pytest.raises(ValueError, match="^In 'Some:Object': Cannot adjust number of fields"):
+        str(IddObject.load(group="Test", object_lines=object_lines))
+
+
 def test_parse_idd_object_begin_extensible_on_last_field() -> None:
     """A one-field extensible group declared last (nothing after it) was taken for a regular field: the last field of an
     object was added without checking its \\begin-extensible."""

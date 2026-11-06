@@ -4,8 +4,9 @@ import re
 from enum import StrEnum
 
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
-from energyplus_toolkit.input.idd.idd_field import IddField
+from energyplus_toolkit.input.idd.idd_field import FieldTypeChar, IddField
 from energyplus_toolkit.input.idd.idd_regex import RE_FIELD_START
+from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 LOG = logging.getLogger("IddObject")
 LOG.setLevel(logging.INFO)
@@ -130,6 +131,17 @@ class IddObject:
         # This is ONLY to please the IDF Editor, but that's what it is...
         self._original_number_of_fields: int = 0
 
+    def _format_error(self, error_msg: str) -> str:
+        """Prefix ``error_msg`` with where it happened, like IddField._format_error."""
+        return f"In '{self.name}': {error_msg}"
+
+    def _parse_int(self, tag: str, value: str) -> int:
+        """Parse the integer value of the ``tag`` property (\\min-fields, \\max-fields, \\extensible:)."""
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(self._format_error(f"Invalid {tag} value '{value}'")) from None
+
     @staticmethod
     def load(group: str, object_lines: list[str]) -> "IddObject":
         idd_object = IddObject(group=group)
@@ -181,27 +193,27 @@ class IddObject:
                 self.properties.hasUrl = True
             elif line.startswith(tag := '\\min-fields'):
                 min_fields_str = line[len(tag) :].strip()
-                self.properties.minFields = int(min_fields_str)
+                self.properties.minFields = self._parse_int(tag=tag, value=min_fields_str)
             elif line.startswith(tag := '\\max-fields'):
                 max_fields_str = line[len(tag) :].strip()
-                self.properties.maxFields = int(max_fields_str)
+                self.properties.maxFields = self._parse_int(tag=tag, value=max_fields_str)
             elif line.startswith(tag := '\\extensible:'):
                 num_extensible_str = line[len(tag) :].strip().split(" ")[0]
                 self.properties.extensible = True
-                self.properties.numExtensible = int(num_extensible_str)
+                self.properties.numExtensible = self._parse_int(tag=tag, value=num_extensible_str)
             elif line.startswith(tag := '\\format'):
                 try:
                     self.properties.format = IddObjectFormat.parse(line[len(tag) :].strip())
                 except ValueError as exc:
-                    raise ValueError(f"{exc} in object '{self.name}'") from None
+                    raise ValueError(self._format_error(str(exc))) from None
             elif has_fields and line.startswith('A') or line.startswith('N'):
                 found_fields_start = True
                 break
             else:
-                raise ValueError(f"Unknown property line '{line}' in object '{self.name}'")
+                raise ValueError(self._format_error(f"Unknown property line '{line}'"))
 
         if has_fields and not found_fields_start:
-            raise ValueError(f"No fields found in object '{self.name}'")
+            raise ValueError(self._format_error("No fields found"))
 
         found_begin_extensible = False
 
@@ -275,11 +287,9 @@ class IddObject:
         """
         if field.properties.beginExtensible:
             if found_begin_extensible:
-                raise ValueError(f"Multiple begin-extensible fields found in object '{self.name}'")
+                raise ValueError(self._format_error("Multiple begin-extensible fields found"))
             if not self.properties.extensible:
-                raise ValueError(
-                    f"Begin-extensible field found in non-extensible object '{self.name}' for field '{field.name}'"
-                )
+                raise ValueError(field._format_error("Begin-extensible field found in a non-extensible object"))
             found_begin_extensible = True
         if found_begin_extensible:
             self.extensible_fields.append(field)
@@ -306,8 +316,9 @@ class IddObject:
         adding_extra = False
         if num_fields < self._original_number_of_fields:
             LOG.debug(
-                f"Adjusting number of fields for object '{self.name}' from {num_fields} to original "
-                f"{self._original_number_of_fields}"
+                self._format_error(
+                    f"Adjusting number of fields from {num_fields} to original {self._original_number_of_fields}"
+                )
             )
             adding_extra = True
 
@@ -342,13 +353,17 @@ class IddObject:
             # Adjust number of fields to original if needed
             if adding_extra:
 
-                assert self.extensible_fields, "Cannot adjust number of fields if no extensible fields are defined"
+                assert self.extensible_fields, self._format_error(
+                    "Cannot adjust number of fields if no extensible fields are defined"
+                )
                 numerator = self._original_number_of_fields - num_fields
                 denominator = self.properties.numExtensible
                 if numerator % denominator != 0:
                     raise ValueError(
-                        f"Cannot adjust number of fields to original {self._original_number_of_fields} "
-                        f"with current fields {num_fields} and extensible group size {denominator}"
+                        self._format_error(
+                            f"Cannot adjust number of fields to original {self._original_number_of_fields} "
+                            f"with current fields {num_fields} and extensible group size {denominator}"
+                        )
                     )
                 extra_groups = int(numerator / denominator)
                 # A and N fields are numbered separately: each group advances by its number of fields of that letter
@@ -375,3 +390,48 @@ class IddObject:
             lines.append("")  # blank line at the end
 
         return "\n".join(lines)
+
+    def _validate_monotonic_field_ids(self) -> list[LogMessage]:
+        """Field ids go up one by one from A1 and N1, separately. One message per gap: the count resumes from it.
+
+        Only the first extensible group is known here: its repeats are renumbered from it when writing the object.
+        """
+        messages = []
+        last_number = {FieldTypeChar.Alpha: 0, FieldTypeChar.Numeric: 0}
+        for field in self.fields + self.extensible_fields:
+            letter, number = field.field_id[0], field.field_id[1:]
+            expected_id = f"{letter}{last_number[field.field_type_char] + 1}"
+            if field.field_id != expected_id:
+                msg = field._format_error(f"expected field ID {expected_id}, got {field.field_id}")
+                messages.append(LogMessage(tool="idd-field-ids", loglevel=LogLevel.ERROR, message=msg))
+            if number.isdigit():
+                last_number[field.field_type_char] = int(number)
+        return messages
+
+    def _validate_extensible_fields(self) -> list[LogMessage]:
+        if not self.properties.extensible:
+            return []
+
+        def error(msg: str) -> LogMessage:
+            return LogMessage(tool="idd-extensible", loglevel=LogLevel.ERROR, message=self._format_error(msg))
+
+        if not self.extensible_fields:
+            return [error("Object is extensible but has no extensible fields")]
+
+        messages = []
+        if self.properties.numExtensible != len(self.extensible_fields):
+            messages.append(
+                error(
+                    f"\\extensible:{self.properties.numExtensible} but {len(self.extensible_fields)} extensible fields"
+                )
+            )
+        if not self.extensible_fields[-1].is_last_field:
+            messages.append(error("Extensible fields do not end with a last field"))
+        return messages
+
+    def validate(self) -> list[LogMessage]:
+        """What is wrong with this object and its fields, which parsed fine."""
+        messages = self._validate_extensible_fields() + self._validate_monotonic_field_ids()
+        for field in self.fields + self.extensible_fields:
+            messages += field.validate()
+        return messages

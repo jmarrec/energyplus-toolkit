@@ -4,6 +4,7 @@ from enum import IntEnum, StrEnum
 
 from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
 from energyplus_toolkit.input.idd.idd_regex import RE_GROUP_NUMBER
+from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)
@@ -540,16 +541,6 @@ class IddField:
                     LOG.info(self._format_error("Field has no \\type: assuming real"))
                 self.properties.type = IddFieldType.RealType
 
-        else:
-            allowable_types = IddFieldType.allowable_types_for_field_char(fieldTypeChar=self.field_type_char)
-            if self.properties.type not in allowable_types:
-                LOG.warning(
-                    self._format_error(
-                        f"Field has \\type: {self.properties.type} but field ID '{self.field_id}' "
-                        "is not compatible with that type"
-                    )
-                )
-
         # The type can come after the \\default
         default = self.properties.stringDefault
         if default is not None and self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
@@ -626,3 +617,21 @@ class IddField:
         for k in self.keys:
             parts.append(str(k))
         return "\n".join(parts)
+
+    def _validate_type_matches_field_id(self) -> list[LogMessage]:
+        """\\type real on an A field, for eg. A choice can be either: some N fields have numeric keys."""
+        if self.properties.type in IddFieldType.allowable_types_for_field_char(fieldTypeChar=self.field_type_char):
+            return []
+        msg = f"Field has \\type {self.properties.type} but field ID '{self.field_id}' is not compatible with that type"
+        return [LogMessage(tool="idd-field-type", loglevel=LogLevel.ERROR, message=self._format_error(msg))]
+
+    def _validate_not_both_required_and_default(self) -> list[LogMessage]:
+        """Validate that the field is not BOTH required-field and has a default."""
+        if not self.properties.required or self.properties.stringDefault is None:
+            return []
+        msg = self._format_error("Field cannot be both required-field and have a default value")
+        return [LogMessage(tool="idd-required-default", loglevel=LogLevel.WARNING, message=msg)]
+
+    def validate(self) -> list[LogMessage]:
+        """What is wrong with this field, which parsed fine."""
+        return self._validate_type_matches_field_id() + self._validate_not_both_required_and_default()

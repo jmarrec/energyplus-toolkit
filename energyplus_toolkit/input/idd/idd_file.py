@@ -4,6 +4,7 @@ from pathlib import Path
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
+from energyplus_toolkit.input.log_message import LogMessage
 
 
 class IddFile:
@@ -163,6 +164,10 @@ class IddFile:
 
     def __repr__(self):
         return f"IddFile({len(self.objects)} objects)"
+
+    def validate(self) -> list[LogMessage]:
+        """What is wrong with the objects of this file, which parsed fine."""
+        return [message for obj in self.objects for message in obj.validate()]
 
     def __str__(self) -> str:
         """Return a formatted IDD file string representation."""
