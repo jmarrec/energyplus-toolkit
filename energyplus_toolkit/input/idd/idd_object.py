@@ -209,7 +209,8 @@ class IddObject:
         expanded_lines = []
         unnamed_ids: set[str] = set()  # fields declared without a \field name, eg "N1, N2, N3,  \note ..."
         for line in object_lines[start_index:]:
-            matches = list(RE_FIELD_START.finditer(line))
+            # Only before the properties: a \note can mention a field, eg "(N13, default 3.342V)"
+            matches = list(RE_FIELD_START.finditer(line.split("\\")[0]))
             self._original_number_of_fields += len(matches)
             if len(matches) == 0 or (len(matches) == 1 and "\\field" in line):
                 expanded_lines.append(line)

@@ -587,6 +587,22 @@ def test_parse_idd_object_junk_line_before_next_field_is_an_error(junk) -> None:
         IddObject.load(group="Test", object_lines=object_lines)
 
 
+def test_parse_idd_object_field_id_in_a_note_is_not_a_field() -> None:
+    """ElectricLoadCenter:Storage:LiIonNMCBattery (V9-5-0 to V25-1-0): the "N13," in this note was taken for a field."""
+    note = "by the nominal cell voltage (N13, default 3.342V)"
+    object_lines = ["Some:Object,", "  N1 , \\field Height", f"       \\note {note}", "  N2 ; \\field Width"]
+    idd_object = IddObject.load(group="Test", object_lines=object_lines)
+    assert [f.field_id for f in idd_object.fields] == ["N1", "N2"]
+    assert idd_object.fields[0].properties.note == note
+    assert idd_object._original_number_of_fields == 2
+
+
+def test_parse_idd_object_field_id_in_the_note_of_a_compact_line_is_not_a_field() -> None:
+    idd_object = IddObject.load(group="Test", object_lines=["Some:Object,", "  N1, N2;  \\note Same as N3, in the IDD"])
+    assert [f.field_id for f in idd_object.fields] == ["N1", "N2"]
+    assert idd_object._original_number_of_fields == 2
+
+
 def test_parse_idd_object_begin_extensible_on_last_field() -> None:
     """A one-field extensible group declared last (nothing after it) was taken for a regular field: the last field of an
     object was added without checking its \\begin-extensible."""
