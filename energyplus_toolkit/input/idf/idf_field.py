@@ -2,11 +2,15 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE
 from energyplus_toolkit.input.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
 from energyplus_toolkit.input.idf import idf_constants
 from energyplus_toolkit.input.idf.idf_constants import format_idf_field
+
+if TYPE_CHECKING:
+    from energyplus_toolkit.input.idf.idf_object import IdfObject
 
 LOG = logging.getLogger("IdfField")
 
@@ -22,13 +26,31 @@ class FieldValidationError(ValueError):
 
 
 class IdfField(ABC):
-    def __init__(self, idd_field: IddField) -> None:
+    def __init__(self, idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None) -> None:
         self._value: str | float | int | None = None
         self._default_value: str | float | int | None = None
         self.idd_field: IddField = idd_field
         self._default_value = idd_field.properties.stringDefault
         self.is_last_field = idd_field.is_last_field
         self.comment: str | None = None  # user-provided field comment; None = use IDD field name
+        # The IdfObject that owns this field, to say where an error happened
+        self.parent: "IdfObject | None" = parent
+        # for an extensible field: its group in the parent
+        self.group_index: int | None = group_index
+
+    @property
+    def name(self) -> str:
+        """The field name, numbered by group for an extensible field: "Vertex 3 X-coordinate"."""
+        if self.group_index is None:
+            return self.idd_field.name
+        return self.idd_field.name_for_group(self.group_index)
+
+    def _format_error(self, error_msg: str) -> str:
+        """Prefix ``error_msg`` with where it happened."""
+        where = f"In '{self.idd_field.objectName}'"
+        if self.parent is not None and (object_name := self.parent.name):
+            where += f" named '{object_name}'"
+        return f"{where}, field '{self.name}': {error_msg}"
 
     @property
     def required(self):
@@ -37,35 +59,37 @@ class IdfField(ABC):
         return props.required and not props.stringDefault
 
     @staticmethod
-    def from_idd_field(idd_field) -> "IdfField":
+    def from_idd_field(
+        idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None
+    ) -> "IdfField":
         field_type = idd_field.properties.type
 
-        field: IdfField
+        field_class: type[IdfField]
         if field_type == IddFieldType.AlphaType:
-            field = AlphaField(idd_field=idd_field)
+            field_class = AlphaField
         elif field_type == IddFieldType.IntegerType:
-            field = IntegerField(idd_field=idd_field)
+            field_class = IntegerField
         elif field_type == IddFieldType.RealType:
-            field = RealField(idd_field=idd_field)
+            field_class = RealField
         elif field_type == IddFieldType.ChoiceType:
             if (idd_field.objectName.lower(), idd_field.name.lower()) == ("schedule:week:compact", "daytype list"):
-                field = DayTypeListField(idd_field=idd_field)
+                field_class = DayTypeListField
             else:
-                field = ChoiceField(idd_field=idd_field)
+                field_class = ChoiceField
         elif field_type == IddFieldType.NodeType:
-            field = NodeField(idd_field=idd_field)
+            field_class = NodeField
         elif field_type == IddFieldType.ObjectListType:
-            field = ObjectListField(idd_field=idd_field)
+            field_class = ObjectListField
         elif field_type == IddFieldType.ExternalListType:
-            field = ExternalListField(idd_field=idd_field)
+            field_class = ExternalListField
         elif field_type == IddFieldType.URLType:
-            field = URLField(idd_field=idd_field)
+            field_class = URLField
         elif field_type == IddFieldType.HandleType:
-            field = HandleField(idd_field=idd_field)
+            field_class = HandleField
         else:
-            raise ValueError(f"Unknown field type: {field_type} for field {idd_field.name}")
+            raise ValueError(f"In '{idd_field.objectName}', field '{idd_field.name}': Unknown field type: {field_type}")
 
-        return field
+        return field_class(idd_field=idd_field, parent=parent, group_index=group_index)
 
     @abstractmethod
     def setString(self, value: str):
@@ -74,7 +98,7 @@ class IdfField(ABC):
     @abstractmethod
     def validate(self):
         if self.required and self.value(return_default=True) is None:
-            raise FieldValidationError("Required field with no default value")
+            raise FieldValidationError(self._format_error("Required field with no default value"))
 
     def value(self, return_default: bool = False) -> str | float | int | None:
         if self._value is not None:
@@ -88,7 +112,7 @@ class IdfField(ABC):
 
     def reset(self):
         if self.required and self.value(return_default=True) is None:
-            raise FieldValidationError("Cannot reset a required field with no default value")
+            raise FieldValidationError(self._format_error("Cannot reset a required field with no default value"))
         self._value = None
 
     def value_text(self) -> str:
@@ -96,12 +120,12 @@ class IdfField(ABC):
         v = self.value(return_default=False)
         return "" if v is None else str(v)
 
-    def text(self, is_last_field: bool = False, field_name: str | None = None) -> str:
-        """The field's IDF line. ``field_name`` (for the ``!-`` comment) defaults to the IDD field name."""
+    def text(self, is_last_field: bool = False) -> str:
+        """The field's IDF line."""
         return format_idf_field(
             value=self.value_text(),
             is_last_field=is_last_field,
-            field_name=self.idd_field.name if field_name is None else field_name,
+            field_name=self.name,
             comment=self.comment,
             units=self.idd_field.properties.units,
         )
@@ -115,9 +139,6 @@ class IdfField(ABC):
 
 
 class AlphaField(IdfField):
-    def __init__(self, idd_field: IddField) -> None:
-        super().__init__(idd_field=idd_field)
-
     def setString(self, value: str):
         self._value = value.strip()
 
@@ -153,13 +174,13 @@ class DayTypeListField(AlphaField):
     def setString(self, value: str):
         v = value.strip()
         if v and not any(day in v.upper() for day in self.DAY_TYPES):
-            raise FieldValidationError(f"Field '{self.idd_field.name}' - No valid day type in: {v}")
+            raise FieldValidationError(self._format_error(f"No valid day type in: {v}"))
         self._value = v
 
 
 class NumericField(IdfField):
-    def __init__(self, idd_field: IddField) -> None:
-        super().__init__(idd_field=idd_field)
+    def __init__(self, idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None) -> None:
+        super().__init__(idd_field=idd_field, parent=parent, group_index=group_index)
         self._value: float | int | None = None
 
         self.autocalculatable: bool = False
@@ -204,8 +225,8 @@ class NumericField(IdfField):
         # on an autosizable-only field, but switch it to the keyword the field actually supports.
         if not self.autocalculatable:
             if not self.autosizable:
-                raise FieldValidationError("Autocalculate not allowed")
-            LOG.warning(f"Field '{self.idd_field.name}' is autosizable, not autocalculatable — switching to Autosize")
+                raise FieldValidationError(self._format_error("Autocalculate not allowed"))
+            LOG.warning(self._format_error("Field is autosizable, not autocalculatable — switching to Autosize"))
             self.autosize()
             return
         self._mode = NumericMode.AUTOCALCULATE
@@ -214,10 +235,8 @@ class NumericField(IdfField):
     def autosize(self):
         if not self.autosizable:
             if not self.autocalculatable:
-                raise FieldValidationError("Autosize not allowed")
-            LOG.warning(
-                f"Field '{self.idd_field.name}' is autocalculatable, not autosizable — switching to Autocalculate"
-            )
+                raise FieldValidationError(self._format_error("Autosize not allowed"))
+            LOG.warning(self._format_error("Field is autocalculatable, not autosizable — switching to Autocalculate"))
             self.autocalculate()
             return
         self._mode = NumericMode.AUTOSIZE
@@ -234,7 +253,7 @@ class NumericField(IdfField):
 
         if not v:
             if self.required:
-                raise FieldValidationError("Cannot set required numeric field to empty value")
+                raise FieldValidationError(self._format_error("Cannot set required numeric field to empty value"))
             self._value = None
             self._mode = NumericMode.NORMAL
             return
@@ -258,9 +277,8 @@ class NumericField(IdfField):
         if self._mode == NumericMode.NORMAL and self._value is not None:
             self._validate_range(self._value)
 
-    @classmethod
     @abstractmethod
-    def _parse_number(cls, value: str) -> int | float:
+    def _parse_number(self, value: str) -> int | float:
         """Parse a string into a number of the appropriate type.
 
         This should throw FieldValidationError if the string cannot be parsed.
@@ -271,29 +289,29 @@ class NumericField(IdfField):
         if self.minimum_value is not None:
             if self.min_bound_type == BoundTypes.InclusiveBound:
                 if value < self.minimum_value:
-                    raise FieldValidationError(f"{value} must be >= {self.minimum_value}")
+                    raise FieldValidationError(self._format_error(f"{value} must be >= {self.minimum_value}"))
             elif self.min_bound_type == BoundTypes.ExclusiveBound:
                 if value <= self.minimum_value:
-                    raise FieldValidationError(f"{value} must be > {self.minimum_value}")
+                    raise FieldValidationError(self._format_error(f"{value} must be > {self.minimum_value}"))
 
         if self.maximum_value is not None:
             if self.max_bound_type == BoundTypes.InclusiveBound:
                 if value > self.maximum_value:
-                    raise FieldValidationError(f"{value} must be <= {self.maximum_value}")
+                    raise FieldValidationError(self._format_error(f"{value} must be <= {self.maximum_value}"))
             elif self.max_bound_type == BoundTypes.ExclusiveBound:
                 if value >= self.maximum_value:
-                    raise FieldValidationError(f"{value} must be < {self.maximum_value}")
+                    raise FieldValidationError(self._format_error(f"{value} must be < {self.maximum_value}"))
 
     def reset(self):
         if self.required and self.value(return_default=True) is None:
-            raise FieldValidationError("Cannot reset a required field with no default value")
+            raise FieldValidationError(self._format_error("Cannot reset a required field with no default value"))
         self._value = None
         self._mode = NumericMode.NORMAL
 
 
 class IntegerField(NumericField):
-    def __init__(self, idd_field: IddField) -> None:
-        super().__init__(idd_field=idd_field)
+    def __init__(self, idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None) -> None:
+        super().__init__(idd_field=idd_field, parent=parent, group_index=group_index)
         self._value: int | None = None
         if self.minimum_value is not None:
             self.minimum_value = int(self.minimum_value)
@@ -304,23 +322,22 @@ class IntegerField(NumericField):
 
     def setInt(self, value: int) -> None:
         if not isinstance(value, (float, int)):
-            raise TypeError("IntegerField value must be an int")
+            raise TypeError(self._format_error("IntegerField value must be an int"))
         # Accept a float with no fractional part, eg 512.0, but don't truncate 512.5
         if isinstance(value, float) and not value.is_integer():  # also False for nan and inf
-            raise FieldValidationError(f"Invalid integer: {value}")
+            raise FieldValidationError(self._format_error(f"Invalid integer: {value}"))
         v = int(value)
         self._validate_range(value=v)
         self._value = v
         self._mode = NumericMode.NORMAL
 
-    @classmethod
-    def _parse_number(cls, value: str) -> int:
+    def _parse_number(self, value: str) -> int:
         """Parse an integer, also accepting a float with no fractional part, eg "512.0".
 
         Anything else is invalid. This is stricter than EnergyPlus, which rounds any number (2.1 -> 2).
         """
         if "_" in value:  # Python's int() and float() accept "1_000", IDF doesn't
-            raise FieldValidationError(f"Invalid integer: {value}")
+            raise FieldValidationError(self._format_error(f"Invalid integer: {value}"))
         try:
             return int(value)
         except ValueError:
@@ -328,15 +345,15 @@ class IntegerField(NumericField):
         try:
             as_float = float(value)
         except ValueError:
-            raise FieldValidationError(f"Invalid integer: {value}") from None
+            raise FieldValidationError(self._format_error(f"Invalid integer: {value}")) from None
         if not as_float.is_integer():  # also False for nan and inf
-            raise FieldValidationError(f"Invalid integer: {value}")
+            raise FieldValidationError(self._format_error(f"Invalid integer: {value}"))
         return int(as_float)
 
 
 class RealField(NumericField):
-    def __init__(self, idd_field: IddField) -> None:
-        super().__init__(idd_field=idd_field)
+    def __init__(self, idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None) -> None:
+        super().__init__(idd_field=idd_field, parent=parent, group_index=group_index)
         self._value: float | None = None
         self._written_as_integer = False  # set by setString, see idf_constants.IDF_KEEP_INTEGER_REALS
 
@@ -346,7 +363,7 @@ class RealField(NumericField):
 
     def setDouble(self, value: float) -> None:
         if not isinstance(value, (float, int)):
-            raise TypeError("RealField value must be a float")
+            raise TypeError(self._format_error("RealField value must be a float"))
         v = float(value)
         self._validate_range(value=v)
         self._value = v
@@ -363,17 +380,16 @@ class RealField(NumericField):
             return str(int(v))
         return super().value_text()
 
-    @classmethod
-    def _parse_number(cls, value: str) -> float:
+    def _parse_number(self, value: str) -> float:
         try:
             return float(value)
         except ValueError:
-            raise FieldValidationError(f"Invalid float: {value}")
+            raise FieldValidationError(self._format_error(f"Invalid float: {value}")) from None
 
 
 class ChoiceField(IdfField):
-    def __init__(self, idd_field: IddField) -> None:
-        super().__init__(idd_field=idd_field)
+    def __init__(self, idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None) -> None:
+        super().__init__(idd_field=idd_field, parent=parent, group_index=group_index)
 
         self.valid_choices: set[str] = {k.name for k in idd_field.keys}
         self._canonical_map: dict[str, str] = {k.lower(): k for k in self.valid_choices}
@@ -388,7 +404,7 @@ class ChoiceField(IdfField):
 
     def setBool(self, value: bool):
         if not self.is_boolean:
-            raise FieldValidationError("This choice field '{self.idd_field.name}' is not a boolean field")
+            raise FieldValidationError(self._format_error("This choice field is not a boolean field"))
         self._value = "Yes" if value else "No"
 
     def validate(self):
@@ -400,7 +416,7 @@ class ChoiceField(IdfField):
         v = self._canonical_map.get(value.lower(), None)
         if v is None:
             raise FieldValidationError(
-                f"Field '{self.idd_field.name}' - Invalid choice: {value}. Valid choices are: {self.valid_choices}"
+                self._format_error(f"Invalid choice: {value}. Valid choices are: {self.valid_choices}")
             )
         return v
 

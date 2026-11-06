@@ -1,6 +1,7 @@
 import pytest
 
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
+from energyplus_toolkit.input.idd.idd_field import IddFieldParseError
 from energyplus_toolkit.input.idd.idd_object import IddObject, IddObjectFormat, IddObjectProperties
 
 
@@ -569,6 +570,21 @@ def test_parse_idd_object_unknown_format_is_an_error(text) -> None:
     "ViewFactor": only those are accepted."""
     with pytest.raises(ValueError, match="Unknown \\\\format"):
         IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\format {text}", "  A1 ; \\field Name"])
+
+
+@pytest.mark.parametrize("junk", ["oops this is junk", "units m"])
+def test_parse_idd_object_junk_line_before_next_field_is_an_error(junk) -> None:
+    """A junk line at the end of a field is reported on that field, even if a valid field follows it."""
+    object_lines = [
+        "Some:Object,",
+        "  N1 , \\field Height",
+        "       \\type real",
+        f"       {junk}",
+        "  N2 ; \\field Width",
+        "       \\type real",
+    ]
+    with pytest.raises(IddFieldParseError, match=f"^In 'Some:Object', field 'Height': Unexpected content.*'{junk}'"):
+        IddObject.load(group="Test", object_lines=object_lines)
 
 
 def test_parse_idd_object_begin_extensible_on_last_field() -> None:

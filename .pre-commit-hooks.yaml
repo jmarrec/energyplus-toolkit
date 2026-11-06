@@ -1,5 +1,5 @@
 # pre-commit hooks: https://pre-commit.com/#creating-new-hooks
-# Each needs the IDD to use, given in the repo's .pre-commit-config.yaml, eg for EnergyPlus:
+# The IDF and unit test hooks need the IDD to use (the IDD hook doesn't take it), given in the repo's .pre-commit-config.yaml, eg for EnergyPlus:
 #   args: [--idd, idd/Energy+.idd.in]
 # Files are reformatted in place: pre-commit then fails if any was changed, so you can review and stage them.
 # require_serial: the CLI runs its own process pool and loads the IDD once.

@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
@@ -385,6 +387,57 @@ def test_parse_idd_duplicate_field_line(second_name):
             objectName="Zone",
             field_lines=["  A1 , \\field Name", "       \\type alpha", f"       \\field {second_name}"],
         )
+
+
+@pytest.mark.parametrize(
+    "field_lines, exception, message",
+    [
+        (["  A1 , \\field Name", "       \\type alpha", "       \\field Other"], IddFieldParseError, "Duplicate"),
+        (["  A1 , \\field Name", "       \\type choice", "       \\key"], ValueError, "Key name is empty"),
+        (["  A1 , \\field Name", "       \\bogus"], ValueError, "Unknown field property text 'bogus'"),
+        (["  A1 , \\field Name", "       \\type alpha", "junk", "more junk"], IddFieldParseError, "Unexpected content"),
+        (
+            ["  N1 , \\field Name", "       \\type real", "       \\default abc"],
+            ValueError,
+            r"Invalid \\default value 'abc'",
+        ),
+        (["  N1 , \\field Name", "       \\minimum> abc"], ValueError, r"Invalid \\minimum value 'abc'"),
+        (["  N1 , \\field Name", "       \\maximum< abc"], ValueError, r"Invalid \\maximum value 'abc'"),
+    ],
+)
+def test_parse_error_says_where(field_lines, exception, message):
+    with pytest.raises(exception, match=f"^In 'Some:Object', field 'Name': {message}"):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
+@pytest.mark.parametrize(
+    "field_lines, exception, message",
+    [
+        ([], ValueError, "No lines provided"),
+        (["  A1 , no field here"], IddFieldParseError, "First line of field does not contain"),
+    ],
+)
+def test_parse_error_before_field_name_is_known(field_lines, exception, message):
+    with pytest.raises(exception, match=f"^In 'Some:Object': {message}"):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
+@pytest.mark.parametrize("junk", ["oops this is junk", "units m"])
+@pytest.mark.parametrize("after_junk", [[], ["       \\units m"], ["       \\units m", "       \\minimum 0"]])
+def test_parse_single_junk_line_after_properties(junk, after_junk):
+    """The first line that isn't a property must be checked too, eg "units m" is a \\units missing its backslash.
+    The error is about that line, even if valid properties follow it."""
+    field_lines = ["  N1 , \\field Height", "       \\type real", junk, *after_junk]
+    with pytest.raises(IddFieldParseError, match=f"Unexpected content found after field properties: '{junk}'"):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
+def test_memo_warning_says_where(caplog):
+    with caplog.at_level(logging.WARNING, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\memo Some text"])
+
+    assert field.properties.note == "Some text"
+    assert "In 'Some:Object', field 'Name': Memo property is deprecated; use Note property instead." in caplog.messages
 
 
 @pytest.mark.parametrize(

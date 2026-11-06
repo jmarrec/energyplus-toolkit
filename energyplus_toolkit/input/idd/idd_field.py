@@ -272,6 +272,20 @@ class IddField:
         # Where the group number goes in its name, for an extensible field
         self._extensible_group_numbering: ExtensibleGroupNumbering | None = None
 
+    def _format_error(self, error_msg: str) -> str:
+        """Prefix ``error_msg`` with where it happened. The field name isn't known yet at the start of parsing."""
+        where = f"In '{self.objectName}'"
+        if self.name:
+            where += f", field '{self.name}'"
+        return f"{where}: {error_msg}"
+
+    def _parse_float(self, tag: str, value: str) -> float:
+        """Parse the numeric value of the ``tag`` property (default, minimum, maximum)."""
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(self._format_error(f"Invalid \\{tag} value '{value}'")) from None
+
     def _parse_property(self, text: str):
         if not text:
             return
@@ -306,7 +320,7 @@ class IddField:
                     if any(x in lower_text for x in ['autosize', 'autocalculate']):
                         self.properties.numericDefault = AUTOSIZE_VALUE
                     else:
-                        self.properties.numericDefault = float(string_default)
+                        self.properties.numericDefault = self._parse_float(tag=tag, value=string_default)
 
             elif lower_text.startswith("deprecated"):
                 self.properties.deprecated = True
@@ -323,9 +337,7 @@ class IddField:
         elif index == 'f':
             if lower_text.startswith("field"):
                 # The name is on the field's first line ("A1 , \field Name"): another \field line is malformed
-                raise IddFieldParseError(
-                    f"Duplicate \\field line '\\{text}' in field '{self.name}' of object '{self.objectName}'"
-                )
+                raise IddFieldParseError(self._format_error(f"Duplicate \\field line '\\{text}'"))
 
         # === i ===
         elif index == 'i':
@@ -338,7 +350,7 @@ class IddField:
             if lower_text.startswith(tag := "key"):
                 key_name = text[len(tag) :].split('!')[0].strip()
                 if not key_name:
-                    raise ValueError(f"Key name is empty in field '{self.name}' of object '{self.objectName}'")
+                    raise ValueError(self._format_error("Key name is empty"))
                 key_note = ""
                 if '!' in text:
                     key_note = text.split('!')[1].strip()
@@ -353,7 +365,7 @@ class IddField:
                     rest = rest[1:].strip()
                 else:
                     self.properties.minBoundType = BoundTypes.InclusiveBound
-                self.properties.minBoundValue = float(rest)
+                self.properties.minBoundValue = self._parse_float(tag=tag, value=rest)
                 not_handled = False
             elif lower_text.startswith(tag := "maximum"):
                 rest = text[len(tag) :].split('!')[0].strip()
@@ -362,11 +374,17 @@ class IddField:
                     rest = rest[1:].strip()
                 else:
                     self.properties.maxBoundType = BoundTypes.InclusiveBound
-                self.properties.maxBoundValue = float(rest)
+                self.properties.maxBoundValue = self._parse_float(tag=tag, value=rest)
                 not_handled = False
 
-            elif lower_text.startswith("memo"):
-                raise ValueError("Memo property is deprecated; use Note property instead.")
+            elif lower_text.startswith(tag := "memo"):
+                LOG.warning(self._format_error("Memo property is deprecated; use Note property instead."))
+                note = text[len(tag) :].strip()
+                if not self.properties.note:
+                    self.properties.note = note
+                else:
+                    self.properties.note += "\n" + note
+                not_handled = False
         # === n ===
         elif index == 'n':
             if lower_text.startswith(tag := "note"):
@@ -421,7 +439,7 @@ class IddField:
 
         # === if none matched ===
         if not_handled:
-            raise ValueError(f"Unknown field property text '{text}' detected in field '{self.name}'")
+            raise ValueError(self._format_error(f"Unknown field property text '{text}'"))
 
     @staticmethod
     def load(objectName: str, field_lines: list[str]) -> "IddField":
@@ -431,7 +449,7 @@ class IddField:
 
     def _parse(self, field_lines: list[str]) -> None:
         if not field_lines:
-            raise ValueError(f"No lines provided to parse for field in object '{self.objectName}'")
+            raise ValueError(self._format_error("No lines provided to parse for field"))
 
         field_lines = [x.strip() for x in field_lines]
         n_lines = len(field_lines)
@@ -439,7 +457,9 @@ class IddField:
         line_number = 0
         self.is_last_field = ';' in field_lines[line_number]
         if '\\field' not in field_lines[line_number]:
-            raise IddFieldParseError(f"First line of field does not contain '\\field': '{field_lines[line_number]}'")
+            raise IddFieldParseError(
+                self._format_error(f"First line of field does not contain '\\field': '{field_lines[line_number]}'")
+            )
         self.field_id = field_lines[line_number].replace(',', ';').split(';', maxsplit=1)[0]
         self.field_id = self.field_id.strip()
 
@@ -456,14 +476,14 @@ class IddField:
             # Default numerics to real
             self.properties.type = IddFieldType.RealType
         else:
-            raise IddFieldParseError(f"Unknown field type identifier found: '{fieldTypeChar}'")
+            raise IddFieldParseError(self._format_error(f"Unknown field type identifier found: '{fieldTypeChar}'"))
 
         # Parse each metadata comment line (\keyword ...)
         while line_number < n_lines:
             line = field_lines[line_number]
-            line_number += 1
             if not line.startswith('\\'):
                 break
+            line_number += 1
 
             # Delegate actual parsing
             self._parse_property(text=line[1:])
@@ -474,19 +494,16 @@ class IddField:
             line_number += 1
             if not line or line.startswith('!'):
                 continue
-            raise IddFieldParseError(
-                f"Unexpected content found after field properties: '{line}', "
-                f"in field '{self.name}' of object '{self.objectName}'"
-            )
+            raise IddFieldParseError(self._format_error(f"Unexpected content found after field properties: '{line}'"))
 
         # Validation
         if self.properties.type == IddFieldType.ChoiceType and not self.keys:
-            LOG.error(f"Field is of type choice but keys are empty: '{self.name}'")
+            LOG.error(self._format_error("Field is of type choice but keys are empty"))
         elif self.properties.type != IddFieldType.ChoiceType and self.keys:
-            LOG.error(f"Field is not of type choice but has non-empty keys: '{self.name}'")
+            LOG.error(self._format_error("Field is not of type choice but has non-empty keys"))
 
         if self.properties.type == IddFieldType.UnknownType:
-            raise IddFieldParseError(f"Field is of unknown type after parsing: '{self.name}'")
+            raise IddFieldParseError(self._format_error("Field is of unknown type after parsing"))
 
     def is_name_field(self) -> bool:
         """Return True if this field represents the name of the object.
@@ -511,7 +528,7 @@ class IddField:
         ``name_for_group`` appends it.
         """
         if self.extensible:
-            raise ValueError(f"Field '{self.name}' of object '{self.objectName}' is already marked extensible")
+            raise ValueError(self._format_error("Field is already marked extensible"))
         self.extensible = True
         self._extensible_group_numbering = ExtensibleGroupNumbering.parse(name=self.name)
         self.name = self._extensible_group_numbering.base_name

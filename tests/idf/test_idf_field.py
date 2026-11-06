@@ -396,3 +396,38 @@ def test_idf_other_choice_fields_still_validated():
     assert isinstance(field, ChoiceField)
     with pytest.raises(FieldValidationError, match="Invalid choice"):
         field.setString("NotATerrain")
+
+
+def _field(idd_lines: list[str]) -> IdfField:
+    """A field with no IdfObject, so with no instance name."""
+    return IdfField.from_idd_field(IddField.load(objectName="Some:Object", field_lines=idd_lines))
+
+
+@pytest.mark.parametrize(
+    "idd_type, field_id, value, message",
+    [
+        ("integer", "N1", "abc", "Invalid integer: abc"),
+        ("integer", "N1", "1_000", "Invalid integer: 1_000"),
+        ("integer", "N1", "1.5", "Invalid integer: 1.5"),
+        ("real", "N1", "abc", "Invalid float: abc"),
+        ("real", "N1", "autosize", "Autosize not allowed"),
+        ("real", "N1", "autocalculate", "Autocalculate not allowed"),
+    ],
+)
+def test_set_string_error_says_where(idd_type, field_id, value, message):
+    field = _field([f"  {field_id} , \\field Value", f"       \\type {idd_type}"])
+    with pytest.raises(FieldValidationError, match=f"^In 'Some:Object', field 'Value': {message}"):
+        field.setString(value)
+
+
+def test_set_bool_error_says_where():
+    field = _field(["  A1 , \\field Value", "       \\type choice", "       \\key One", "       \\key Two"])
+    with pytest.raises(FieldValidationError, match="^In 'Some:Object', field 'Value': This choice field is not"):
+        field.setBool(True)
+
+
+def test_autosize_warning_says_where(caplog):
+    field = _field(["  N1 , \\field Value", "       \\type real", "       \\autocalculatable"])
+    with caplog.at_level(logging.WARNING, logger="IdfField"):
+        field.setString("autosize")
+    assert any(m.startswith("In 'Some:Object', field 'Value': Field is autocalculatable") for m in caplog.messages)

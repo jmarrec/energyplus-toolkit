@@ -1281,3 +1281,85 @@ def test_idf_object_str_format_values_per_line_custom_comment_inside_keeps_one_f
         "  0.045,                   !- Back Reflectance 1",
         "  0.31,0.0,0.044,0.044;",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Errors say where they happened
+# ---------------------------------------------------------------------------
+
+SURFACE_IDD = """\
+Some:Surface,
+       \\extensible:2
+  A1 , \\field Name
+       \\required-field
+       \\type alpha
+       \\reference SurfaceNames
+  A2 , \\field Sun Exposure
+       \\type choice
+       \\key SunExposed
+       \\key NoSun
+  N1 , \\field Vertex 1 X-coordinate
+       \\begin-extensible
+       \\type real
+       \\minimum 0
+  N2 ; \\field Vertex 1 Y-coordinate
+       \\type real
+"""
+
+NO_NAME_IDD = """\
+Some:Unnamed,
+  N1 ; \\field Value
+       \\type real
+       \\minimum 0
+"""
+
+
+def test_idf_object_parse_error_says_where():
+    text = "Some:Surface,\n  Wall 1,\n  NoWind;\n"
+    match = "^In 'Some:Surface' named 'Wall 1', field 'Sun Exposure': Invalid choice: NoWind"
+    with pytest.raises(FieldValidationError, match=match):
+        IdfObject.load(idd_object=make_idd_object(SURFACE_IDD), text=text)
+
+
+def test_idf_object_parse_error_without_name_field():
+    with pytest.raises(FieldValidationError, match=r"^In 'Some:Unnamed', field 'Value': -1.0 must be >= 0"):
+        IdfObject.load(idd_object=make_idd_object(NO_NAME_IDD), text="Some:Unnamed,\n  -1;\n")
+
+
+def test_idf_object_parse_error_with_empty_name():
+    match = "^In 'Some:Surface', field 'Sun Exposure': Invalid choice: NoWind"
+    with pytest.raises(FieldValidationError, match=match):
+        IdfObject.load(idd_object=make_idd_object(SURFACE_IDD), text="Some:Surface,\n  ,\n  NoWind;\n")
+
+
+def test_idf_object_parse_error_in_extensible_group_has_its_number():
+    text = "Some:Surface,\n  Wall 1,\n  NoSun,\n  0,\n  0,\n  1,\n  0,\n  -2,\n  0;\n"
+    match = "^In 'Some:Surface' named 'Wall 1', field 'Vertex 3 X-coordinate': -2.0 must be >= 0"
+    with pytest.raises(FieldValidationError, match=match):
+        IdfObject.load(idd_object=make_idd_object(SURFACE_IDD), text=text)
+
+
+def test_idf_object_set_string_error_says_where():
+    obj = IdfObject.load(idd_object=make_idd_object(SURFACE_IDD), text="Some:Surface,\n  Wall 1,\n  NoSun;\n")
+    with pytest.raises(FieldValidationError, match="^In 'Some:Surface' named 'Wall 1', field 'Sun Exposure': "):
+        obj.setString(1, "NoWind")
+
+
+def test_idf_object_error_uses_the_current_name():
+    obj = IdfObject.load(idd_object=make_idd_object(SURFACE_IDD), text="Some:Surface,\n  Wall 1,\n  NoSun;\n")
+    obj.setName("Wall 2")
+    with pytest.raises(FieldValidationError, match="^In 'Some:Surface' named 'Wall 2', "):
+        obj.setString(1, "NoWind")
+
+
+def test_idf_object_push_extensible_group_error_has_its_number():
+    obj = IdfObject.load(idd_object=make_idd_object(SURFACE_IDD), text="Some:Surface,\n  Wall 1,\n  NoSun;\n")
+    obj.push_extensible_group(["0", "0"])
+    with pytest.raises(FieldValidationError, match="field 'Vertex 2 X-coordinate': -2.0 must be >= 0"):
+        obj.push_extensible_group(["-2", "0"])
+
+
+def test_idf_object_validate_error_says_where():
+    obj = IdfObject(idd_object=make_idd_object(SURFACE_IDD))
+    with pytest.raises(FieldValidationError, match="^In 'Some:Surface', field 'Name': Required field"):
+        obj.validate()
