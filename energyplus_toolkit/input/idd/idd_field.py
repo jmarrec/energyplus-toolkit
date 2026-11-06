@@ -365,8 +365,17 @@ class IddField:
                 self.properties.maxBoundValue = float(rest)
                 not_handled = False
 
-            elif lower_text.startswith("memo"):
-                raise ValueError("Memo property is deprecated; use Note property instead.")
+            elif lower_text.startswith(tag := "memo"):
+                LOG.warning(
+                    "Memo property is deprecated; use Note property instead. "
+                    f"in field '{self.name}' of object '{self.objectName}'"
+                )
+                note = text[len(tag) :].strip()
+                if not self.properties.note:
+                    self.properties.note = note
+                else:
+                    self.properties.note += "\n" + note
+                not_handled = False
         # === n ===
         elif index == 'n':
             if lower_text.startswith(tag := "note"):
