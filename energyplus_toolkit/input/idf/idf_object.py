@@ -151,7 +151,7 @@ class IdfObject:
         self.idd_object: IddObject = idd_object
         self.comment: str = ""
         # Fixed (non-extensible) fields, one per idd_object.fields entry.
-        self._fields: list[IdfField] = [IdfField.from_idd_field(f) for f in idd_object.fields]
+        self._fields: list[IdfField] = [IdfField.from_idd_field(f, parent=self) for f in idd_object.fields]
         # Each inner list is one extensible group, sized to numExtensible.
         self._extensible_groups: list[list[IdfField]] = []
         # Number of fixed fields included in serialisation.  Starts at minFields,
@@ -166,7 +166,10 @@ class IdfObject:
     # ------------------------------------------------------------------
 
     def _new_extensible_group(self) -> list[IdfField]:
-        return [IdfField.from_idd_field(f) for f in self.idd_object.extensible_fields]
+        group_index = len(self._extensible_groups)
+        return [
+            IdfField.from_idd_field(f, parent=self, group_index=group_index) for f in self.idd_object.extensible_fields
+        ]
 
     # ------------------------------------------------------------------
     # Parsing
