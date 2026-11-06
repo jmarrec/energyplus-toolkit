@@ -422,6 +422,16 @@ def test_parse_error_before_field_name_is_known(field_lines, exception, message)
         IddField.load(objectName="Some:Object", field_lines=field_lines)
 
 
+@pytest.mark.parametrize("junk", ["oops this is junk", "units m"])
+@pytest.mark.parametrize("after_junk", [[], ["       \\units m"], ["       \\units m", "       \\minimum 0"]])
+def test_parse_single_junk_line_after_properties(junk, after_junk):
+    """The first line that isn't a property must be checked too, eg "units m" is a \\units missing its backslash.
+    The error is about that line, even if valid properties follow it."""
+    field_lines = ["  N1 , \\field Height", "       \\type real", junk, *after_junk]
+    with pytest.raises(IddFieldParseError, match=f"Unexpected content found after field properties: '{junk}'"):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
 def test_memo_warning_says_where(caplog):
     with caplog.at_level(logging.WARNING, logger="IddField"):
         field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\memo Some text"])

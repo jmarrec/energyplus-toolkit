@@ -481,9 +481,9 @@ class IddField:
         # Parse each metadata comment line (\keyword ...)
         while line_number < n_lines:
             line = field_lines[line_number]
-            line_number += 1
             if not line.startswith('\\'):
                 break
+            line_number += 1
 
             # Delegate actual parsing
             self._parse_property(text=line[1:])
