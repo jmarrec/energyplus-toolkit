@@ -50,6 +50,22 @@ Exit codes: 0 when done, 1 if `--check` found files to reformat, 123 on error.
 Content is never lost: a file or block that can't be reformatted safely (unknown object, text outside a field, IMF or
 parametric file, C++ code building the IDF...) is left unchanged, with a warning.
 
+## Linting IDD files
+
+```shell
+energyplus-toolkit lint idd Energy+.idd
+energyplus-toolkit lint idd --fail-on warning --output-format json idd/
+```
+
+Reports what parses but looks wrong, without changing the file: field ids that aren't consecutive, malformed extensible
+groups, a `\type` that doesn't match the field id (errors), and a `\required-field` with a `\default` (warning).
+
+Exit codes: 0 if nothing reached `--fail-on` (`error` by default), 1 otherwise.
+
+`--output-format`: `text` (default), `json` (one object per message, with the keys of EnergyPlus'
+`scripts/dev/base_hook.py`), or `gha` (GitHub Actions annotations, shown on the PR). The text is colored on a terminal
+and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them on.
+
 ## pre-commit hooks
 
 ```yaml

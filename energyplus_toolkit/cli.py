@@ -2,6 +2,8 @@
 
 energyplus-toolkit format idf|idd|unit-test PATH...: works like black, give it files and/or folders, they are
 reformatted in place, in parallel. Use --check or --diff to only see what would change.
+
+energyplus-toolkit lint idd PATH...: report what is wrong in IDD files, without changing them.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from pathlib import Path
 from energyplus_toolkit.format import runner
 from energyplus_toolkit.format.runner import Job, Kind, Mode
 from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.log_message import LogLevel
+from energyplus_toolkit.lint import idd as lint_idd
 
 DESCRIPTIONS = {
     Kind.IDF: "Reformat EnergyPlus IDF files.",
@@ -83,6 +87,51 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
     p.set_defaults(kind=kind)
 
 
+def _add_lint_idd_subcommand(subparsers) -> None:
+    description = "Report problems in EnergyPlus IDD files, which aren't changed."
+    p = subparsers.add_parser("idd", help=description, description=description)
+    patterns = ", ".join(f"*{s}" for s in Kind.IDD.suffixes)
+    p.add_argument(
+        "paths",
+        type=Path,
+        nargs="+",
+        metavar="PATH",
+        help=f"Files or folders. Folders are searched recursively for {patterns}.",
+    )
+    p.add_argument(
+        "--exclude",
+        type=re.compile,
+        metavar="REGEX",
+        help="Skip files found in folders whose path matches this regex. Files given explicitly are always processed.",
+    )
+    p.add_argument(
+        "--fail-on",
+        type=str.upper,
+        choices=[level.name for level in LogLevel],
+        default=LogLevel.ERROR.name,
+        help="Exit 1 if a message is at least this severe (default: error).",
+    )
+    p.add_argument(
+        "--output-format",
+        type=lint_idd.OutputFormat,
+        default=lint_idd.OutputFormat.TEXT,
+        metavar="{text,json,gha}",
+        help=(
+            "text, one JSON object per message with the keys of EnergyPlus' base_hook.py, or gha: GitHub Actions "
+            "annotations (default: text)."
+        ),
+    )
+
+
+def _lint(args) -> int:
+    files = runner.collect_files(args.paths, Kind.IDD, args.exclude)
+    if not files:
+        print("No files to lint.", file=sys.stderr)
+        return 0
+    messages = [msg for path in files for msg in lint_idd.lint_file(path)]
+    return lint_idd.report(messages, fail_on=LogLevel[args.fail_on], output_format=args.output_format)
+
+
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="energyplus-toolkit", description="Tools for EnergyPlus input files.")
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
@@ -96,6 +145,11 @@ def get_parser() -> argparse.ArgumentParser:
     _add_format_subcommand(kinds, "idf", Kind.IDF)
     _add_format_subcommand(kinds, "idd", Kind.IDD)
     _add_format_subcommand(kinds, "unit-test", Kind.UNIT_TEST)
+
+    lint_parser = commands.add_parser("lint", help="Report problems in EnergyPlus files.")
+    lint_kinds = lint_parser.add_subparsers(dest="kind_name", metavar="KIND")
+    lint_kinds.required = True
+    _add_lint_idd_subcommand(lint_kinds)
     return parser
 
 
@@ -122,6 +176,8 @@ def main(args_: list[str] | None = None) -> int:
     for path in args.paths:
         if not path.exists():
             parser.error(f"path not found: {path}")
+    if args.command == "lint":
+        return _lint(args)
     if args.workers is not None and args.workers < 1:
         parser.error("--workers must be at least 1.")
     job = _make_job(args, parser)
