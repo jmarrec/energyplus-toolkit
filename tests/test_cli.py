@@ -215,3 +215,10 @@ def test_reformat_idf_negative_leading(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(["format", "idf", "--idd", IDD, "--leading", "-1", str(tmp_path)])
     assert "--leading must be at least 0, got -1" in capsys.readouterr().err
+
+
+def test_bad_exclude_regex_is_an_error(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["lint", "idd", "--exclude", "[", "."])
+    assert exc.value.code == 2
+    assert "argument --exclude: not a valid regular expression: unterminated character set" in capsys.readouterr().err

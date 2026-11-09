@@ -46,7 +46,9 @@ def test_find_pyproject_stays_in_the_repository(project):
 
 def test_idd_relative_to_the_pyproject(project, capsys):
     # Not --idd, which format idf requires, and run from a subfolder: relative to the pyproject.toml, not to it
-    _pyproject(project, f'idd = "{os.path.relpath(IDD, project)}"')
+    (project / "idd").mkdir()
+    shutil.copy(IDD, project / "idd" / IDD.name)
+    _pyproject(project, f'idd = "idd/{IDD.name}"')
     (project / "sub").mkdir()
     os.chdir(project / "sub")
     assert main(["format", "idf", "-o", "-", str(project / "in.idf")]) == 0
@@ -54,7 +56,8 @@ def test_idd_relative_to_the_pyproject(project, capsys):
 
 
 def test_command_line_wins(project, capsys):
-    _pyproject(project, f'idd = "{IDD}"\nleading = 4')
+    # as_posix: a TOML string would take the backslashes of a Windows path as escapes
+    _pyproject(project, f'idd = "{IDD.as_posix()}"\nleading = 4')
     assert main(["format", "idf", "-o", "-", "in.idf"]) == 0
     assert "\n    Version,26.1;\n" in capsys.readouterr().out
     assert main(["format", "idf", "--leading", "0", "-o", "-", "in.idf"]) == 0
@@ -92,6 +95,7 @@ def test_no_table_is_no_config(project):
         ("leading = 'two'", "'leading' must be an integer, got 'two'"),
         ("quiet = 1", "'quiet' must be true or false, got 1"),
         ("fail-on = 'loud'", "'fail-on' must be one of INFO, WARNING, ERROR, got 'loud'"),
+        ("exclude = '['", "'exclude': not a valid regular expression: unterminated character set"),
         ("[tool.energyplus-toolkit", "pyproject.toml: "),
     ],
 )

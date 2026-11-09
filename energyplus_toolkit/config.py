@@ -11,6 +11,7 @@ that have that option, and the command line wins. A relative path is relative to
 from __future__ import annotations
 
 import argparse
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,14 @@ NOT_CONFIGURABLE = frozenset({"check", "diff", "output", "config"})
 
 class ConfigError(ValueError):
     pass
+
+
+def regex(value: str) -> re.Pattern[str]:
+    """The argparse type of --exclude, like black's validate_regex: an error rather than a traceback."""
+    try:
+        return re.compile(value)
+    except re.error as exc:
+        raise argparse.ArgumentTypeError(f"not a valid regular expression: {exc}") from None
 
 
 def find_pyproject(start: Path) -> Path | None:
@@ -74,7 +83,10 @@ def _convert(action: argparse.Action, key: str, value: Any, base_dir: Path) -> A
         raise ConfigError(f"'{key}' must be a string, got {value!r}")
     if action.type is Path:
         return base_dir / value  # unchanged if absolute
-    converted = action.type(value) if callable(action.type) else value
+    try:
+        converted = action.type(value) if callable(action.type) else value
+    except argparse.ArgumentTypeError as exc:
+        raise ConfigError(f"'{key}': {exc}") from None
     if action.choices is not None and converted not in action.choices:
         raise ConfigError(f"'{key}' must be one of {', '.join(map(str, action.choices))}, got {value!r}")
     return converted

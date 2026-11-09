@@ -11,7 +11,6 @@ Defaults for the options can be set in the [tool.energyplus-toolkit] table of a 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -73,7 +72,7 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
     )
     p.add_argument(
         "--exclude",
-        type=re.compile,
+        type=config.regex,
         metavar="REGEX",
         help="Skip files found in folders whose path matches this regex. Files given explicitly are always processed.",
     )
@@ -129,7 +128,7 @@ def _add_lint_idd_subcommand(subparsers) -> None:
     )
     p.add_argument(
         "--exclude",
-        type=re.compile,
+        type=config.regex,
         metavar="REGEX",
         help="Skip files found in folders whose path matches this regex. Files given explicitly are always processed.",
     )
