@@ -11,6 +11,7 @@ from energyplus_toolkit.input.idd.idd_field import IddField
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.log_message import LogLevel, LogMessage
+from energyplus_toolkit.lint.idd import lint_file
 
 RESOURCES = Path(__file__).parent / "resources"
 IDD = RESOURCES / "V26-1-0-Energy+.idd"
@@ -200,6 +201,7 @@ def test_cli_lint_json(error_idd, capsys):
         "loglevel": "Error",
         "filename": "error.idd",
         "file": str(error_idd),
+        "line": 4,
         "message": "In 'Some:Object', field 'Name': expected field ID A1, got A2",
     }
 
@@ -210,7 +212,7 @@ def test_cli_lint_github_actions(error_idd, capsys, monkeypatch):
     assert main(["lint", "idd", "--output-format", "gha", error_idd.name]) == 1
     first = capsys.readouterr().out.splitlines()[0]
     assert first.startswith(
-        f"::error file={error_idd.name},line=1,title=idd-field-ids::In 'Some:Object', field 'Name': "
+        f"::error file={error_idd.name},line=4,title=idd-field-ids::In 'Some:Object', field 'Name': "
     )
 
 
@@ -282,3 +284,44 @@ def test_cli_lint_info_is_only_printed_if_verbose(info_idd, capsys, args, printe
     # Always counted
     assert summary.endswith("We found 1 Info(s).")
     assert code == (1 if "--fail-on" in args else 0)
+
+
+def test_lint_messages_have_the_line_of_their_field_or_object(tmp_path):
+    path = tmp_path / "lines.idd"
+    lines = [
+        "  A1 , \\field Name",
+        "  A3 ; \\field Other",  # line 5
+        "",
+        "Other:Object,",  # line 7
+        "  \\extensible:2",
+        "  A1 ; \\field Name",
+    ]
+    path.write_text(_idd(*lines))
+    assert [(msg.line_number, msg.tool) for msg in lint_file(path)] == [(5, "idd-field-ids"), (7, "idd-extensible")]
+
+
+def test_lint_messages_of_a_compact_line_have_its_line(tmp_path):
+    path = tmp_path / "compact.idd"
+    path.write_text(_idd("  N1, N3; \\note no names"))
+    assert [(msg.line_number, msg.tool) for msg in lint_file(path)] == [(4, "idd-field-ids")]
+
+
+@pytest.mark.parametrize(
+    "lines, expected",
+    [
+        (["  \\unique-object BLA", "  A1 ; \\field Name"], "In 'Some:Object', line 3: \\unique-object takes no value"),
+        (["  A1 , \\field Name", "  A2 ; \\field Other", "       \\autosizable BLA"], "field 'Other', line 5: "),
+    ],
+)
+def test_lint_parse_error_says_its_line(tmp_path, lines, expected):
+    path = tmp_path / "broken.idd"
+    path.write_text(_idd(*lines))
+    (msg,) = lint_file(path)
+    assert msg.tool == "idd-parse"
+    assert expected in msg.message
+
+
+def test_lint_message_does_not_repeat_its_line(error_idd):
+    (msg,) = lint_file(error_idd)
+    assert msg.line_number == 4
+    assert "line" not in msg.message

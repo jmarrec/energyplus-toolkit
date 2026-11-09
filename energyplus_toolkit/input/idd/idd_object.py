@@ -132,9 +132,18 @@ class IddObject:
         # This is ONLY to please the IDF Editor, but that's what it is...
         self._original_number_of_fields: int = 0
 
-    def _format_error(self, error_msg: str) -> str:
-        """Prefix ``error_msg`` with where it happened, like IddField._format_error."""
-        return f"In '{self.name}': {error_msg}"
+        # Where the object starts in its IDD file, if known: the line of all its lint messages
+        self.line_number: int | None = None
+
+    def _format_error(self, error_msg: str, include_line_number: bool = True) -> str:
+        """Prefix ``error_msg`` with where it happened, like IddField._format_error.
+
+        Lint messages pass ``include_line_number=False``: they have the line already.
+        """
+        where = f"In '{self.name}'"
+        if include_line_number and self.line_number is not None:
+            where += f", line {self.line_number}"
+        return f"{where}: {error_msg}"
 
     def _parse_int(self, tag: str, value: str) -> int:
         """Parse the integer value of the ``tag`` property (\\min-fields, \\max-fields, \\extensible:)."""
@@ -156,14 +165,17 @@ class IddObject:
         return True
 
     @staticmethod
-    def load(group: str, object_lines: list[str]) -> "IddObject":
+    def load(group: str, object_lines: list[str], line_numbers: list[int] | None = None) -> "IddObject":
+        """``line_numbers``: where each of ``object_lines`` is in the IDD file, if known, for the lint messages."""
         idd_object = IddObject(group=group)
-        idd_object._parse(object_lines=object_lines)
+        idd_object._parse(object_lines=object_lines, line_numbers=line_numbers)
         return idd_object
 
-    def _parse(self, object_lines: list[str]) -> None:
+    def _parse(self, object_lines: list[str], line_numbers: list[int] | None = None) -> None:
         if not object_lines:
             raise ValueError(f"No lines provided to parse for object in group '{self.group}'")
+        numbers: list[int | None] = list(line_numbers) if line_numbers else [None] * len(object_lines)
+        self.line_number = numbers[0]
 
         object_lines = [x.strip() for x in object_lines]
         n_lines = len(object_lines)
@@ -237,13 +249,15 @@ class IddObject:
 
         start_index = line_number - 1
         expanded_lines = []
+        expanded_numbers: list[int | None] = []
         unnamed_ids: set[str] = set()  # fields declared without a \field name, eg "N1, N2, N3,  \note ..."
-        for line in object_lines[start_index:]:
+        for line, number in zip(object_lines[start_index:], numbers[start_index:]):
             # Only before the properties: a \note can mention a field, eg "(N13, default 3.342V)"
             matches = list(RE_FIELD_START.finditer(line.split("\\")[0]))
             self._original_number_of_fields += len(matches)
             if len(matches) == 0 or (len(matches) == 1 and "\\field" in line):
                 expanded_lines.append(line)
+                expanded_numbers.append(number)
                 continue
 
             # Extract tail (anything after the last field match)
@@ -256,8 +270,11 @@ class IddObject:
                 unnamed_ids.add(field_id[:-1].strip())
                 expanded_lines.append(f"{field_id} \\field {field_id[:-1]}")
                 expanded_lines.append(tail)
+                # All the fields of a compact line are on it
+                expanded_numbers += [number, number]
 
         object_lines = object_lines[:start_index] + expanded_lines
+        numbers = numbers[:start_index] + expanded_numbers
         n_lines = len(object_lines)
 
         while line_number < n_lines:
@@ -266,7 +283,7 @@ class IddObject:
             if line.startswith('A') or line.startswith('N') or not line:
                 end_index = line_number
                 field_lines = object_lines[start_index:end_index]
-                field = IddField.load(objectName=self.name, field_lines=field_lines)
+                field = IddField.load(objectName=self.name, field_lines=field_lines, line_number=numbers[start_index])
                 found_begin_extensible = self._add_field(field, found_begin_extensible)
                 start_index = line_number
 
@@ -281,7 +298,7 @@ class IddObject:
         # process last field if needed
         if start_index < n_lines:
             field_lines = object_lines[start_index:]
-            field = IddField.load(objectName=self.name, field_lines=field_lines)
+            field = IddField.load(objectName=self.name, field_lines=field_lines, line_number=numbers[start_index])
             self._add_field(field, found_begin_extensible)
 
         for field in self.fields + self.extensible_fields:
@@ -420,8 +437,14 @@ class IddObject:
             letter, number = field.field_id[0], field.field_id[1:]
             expected_id = f"{letter}{last_number[field.field_type_char] + 1}"
             if field.field_id != expected_id:
-                msg = field._format_error(f"expected field ID {expected_id}, got {field.field_id}")
-                messages.append(LogMessage(tool="idd-field-ids", loglevel=LogLevel.ERROR, message=msg))
+                msg = field._format_error(
+                    f"expected field ID {expected_id}, got {field.field_id}", include_line_number=False
+                )
+                messages.append(
+                    LogMessage(
+                        tool="idd-field-ids", loglevel=LogLevel.ERROR, message=msg, line_number=field.line_number
+                    )
+                )
             if number.isdigit():
                 last_number[field.field_type_char] = int(number)
         return messages
@@ -431,7 +454,12 @@ class IddObject:
             return []
 
         def error(msg: str) -> LogMessage:
-            return LogMessage(tool="idd-extensible", loglevel=LogLevel.ERROR, message=self._format_error(msg))
+            return LogMessage(
+                tool="idd-extensible",
+                loglevel=LogLevel.ERROR,
+                message=self._format_error(msg, include_line_number=False),
+                line_number=self.line_number,
+            )
 
         if not self.extensible_fields:
             return [error("Object is extensible but has no extensible fields")]
