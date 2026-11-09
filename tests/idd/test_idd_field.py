@@ -433,6 +433,17 @@ def test_parse_single_junk_line_after_properties(junk, after_junk):
         IddField.load(objectName="Some:Object", field_lines=field_lines)
 
 
+@pytest.mark.parametrize(
+    "tag", ["autosizable", "autocalculatable", "begin-extensible", "deprecated", "required-field", "retaincase"]
+)
+@pytest.mark.parametrize("rest", [" BLABLABLA", "s", " ! a comment"])
+def test_parse_valueless_flag_with_a_value_is_an_error(tag, rest):
+    """The text after it would be lost. "s" is a typo: \\autosizables."""
+    field_lines = ["  N1 , \\field Name", "       \\type real", f"       \\{tag}{rest}"]
+    with pytest.raises(ValueError, match=f"^In 'Some:Object', field 'Name': \\\\{tag} takes no value"):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
 def test_memo_warning_says_where(caplog):
     with caplog.at_level(logging.WARNING, logger="IddField"):
         field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\memo Some text"])

@@ -327,6 +327,18 @@ class IddField:
         except ValueError:
             raise ValueError(self._format_error(f"Invalid \\{tag} value '{value}'")) from None
 
+    def _parse_valueless_flag(self, text: str, tag: str) -> bool:
+        """For a tag that takes no value: anything after it is an error, it would be lost.
+
+        Comments should go in a \\note anyways, so I also reject that.
+
+        That also catches a typo that starts like the tag, eg \\autosizables.
+        """
+        rest = text[len(tag) :].strip()
+        if rest:
+            raise ValueError(self._format_error(f"\\{tag} takes no value, got '{rest}'"))
+        return True
+
     def _parse_property(self, text: str):
         if not text:
             return
@@ -337,17 +349,17 @@ class IddField:
 
         # === a ===
         if index == 'a':
-            if lower_text.startswith("autosizable"):
-                self.properties.autosizable = True
+            if lower_text.startswith(tag := "autosizable"):
+                self.properties.autosizable = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
-            elif lower_text.startswith("autocalculatable"):
-                self.properties.autocalculatable = True
+            elif lower_text.startswith(tag := "autocalculatable"):
+                self.properties.autocalculatable = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === b ===
         elif index == 'b':
-            if lower_text.startswith("begin-extensible"):
-                self.properties.beginExtensible = True
+            if lower_text.startswith(tag := "begin-extensible"):
+                self.properties.beginExtensible = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === d ===
@@ -357,8 +369,8 @@ class IddField:
                 self.properties.stringDefault = text[len(tag) :].split('!')[0].strip()
                 not_handled = False
 
-            elif lower_text.startswith("deprecated"):
-                self.properties.deprecated = True
+            elif lower_text.startswith(tag := "deprecated"):
+                self.properties.deprecated = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === e ===
@@ -394,7 +406,7 @@ class IddField:
         # === m ===
         elif index == 'm':
             if lower_text.startswith(tag := "minimum"):
-                rest = text[len(tag) :].split('!')[0].strip()
+                rest = text[len(tag) :].strip()
                 if rest.startswith('>'):
                     self.properties.minBoundType = BoundTypes.ExclusiveBound
                     rest = rest[1:].strip()
@@ -403,7 +415,7 @@ class IddField:
                 self.properties.minBoundValue = self._parse_float(tag=tag, value=rest)
                 not_handled = False
             elif lower_text.startswith(tag := "maximum"):
-                rest = text[len(tag) :].split('!')[0].strip()
+                rest = text[len(tag) :].strip()
                 if rest.startswith('<'):
                     self.properties.maxBoundType = BoundTypes.ExclusiveBound
                     rest = rest[1:].strip()
@@ -439,8 +451,8 @@ class IddField:
 
         # === r ===
         elif index == 'r':
-            if lower_text.startswith("required-field"):
-                self.properties.required = True
+            if lower_text.startswith(tag := "required-field"):
+                self.properties.required = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
             elif lower_text.startswith(tag := "reference-class-name"):
                 reference = text[len(tag) :].split('!')[0].strip()
@@ -450,8 +462,8 @@ class IddField:
                 reference = text[len(tag) :].split('!')[0].strip()
                 self.properties.references.append(reference)
                 not_handled = False
-            elif lower_text.startswith("retaincase"):
-                self.properties.retaincase = True
+            elif lower_text.startswith(tag := "retaincase"):
+                self.properties.retaincase = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === t ===
