@@ -2,9 +2,11 @@ import re
 from pathlib import Path
 
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
+from energyplus_toolkit.input.idd.idd_field import IddField
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
-from energyplus_toolkit.input.log_message import LogMessage
+from energyplus_toolkit.input.idd.idd_units import UnitsTable
+from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 
 class IddFile:
@@ -168,9 +170,52 @@ class IddFile:
     def __repr__(self):
         return f"IddFile({len(self.objects)} objects)"
 
+    def units_table(self) -> UnitsTable | None:
+        """The units table of the header, None if it has none (eg an old IDD)."""
+        return UnitsTable.parse(self.header)
+
+    def _validate_units(self) -> list[LogMessage]:
+        """Each field's \\units and \\ip-units against the units table of the header. Replaces EnergyPlus'
+        scripts/dev/validate_idd_units.py, which only checked \\units."""
+        table = self.units_table()
+        if table is None:
+            return []
+
+        messages = []
+        for obj in self.objects:
+            for field in obj.fields + obj.extensible_fields:
+                messages += self._validate_field_units(table=table, field=field)
+        return messages
+
+    @staticmethod
+    def _validate_field_units(table: UnitsTable, field: IddField) -> list[LogMessage]:
+        si, ip = field.properties.units, field.properties.ipUnits
+
+        def message(loglevel: LogLevel, msg: str) -> list[LogMessage]:
+            return [LogMessage(tool="idd-units", loglevel=loglevel, message=field._format_error(msg))]
+
+        if not si:
+            if ip:
+                return message(LogLevel.ERROR, f"\\ip-units '{ip}' without \\units")
+            return []
+        if not table.is_known(si):
+            return message(LogLevel.ERROR, f"\\units '{si}' isn't in the units table of the header")
+        if not ip:
+            return []
+        if si in table.not_translated:
+            return message(LogLevel.ERROR, f"\\units '{si}' isn't translated, it can't have \\ip-units '{ip}'")
+        if ip == table.defaults[si].ip_units:
+            return message(LogLevel.INFO, f"\\ip-units '{ip}' is already the default for \\units '{si}', remove it")
+        if ip not in table.ip_units_for(si):
+            expected = ", ".join(table.ip_units_for(si))
+            return message(
+                LogLevel.ERROR, f"\\ip-units '{ip}' isn't a conversion of \\units '{si}', expected one of: {expected}"
+            )
+        return []
+
     def validate(self) -> list[LogMessage]:
-        """What is wrong with the objects of this file, which parsed fine."""
-        return [message for obj in self.objects for message in obj.validate()]
+        """What is wrong with this file and its objects, which parsed fine."""
+        return [message for obj in self.objects for message in obj.validate()] + self._validate_units()
 
     def __str__(self) -> str:
         """Return a formatted IDD file string representation."""

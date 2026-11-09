@@ -3,6 +3,7 @@ import pytest
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
+from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 
 def header() -> str:
@@ -205,3 +206,84 @@ def test_idd_file_stray_group_is_an_error():
 def test_idd_file_line_that_is_not_an_object_is_an_error():
     with pytest.raises(ValueError, match="^Expected an object on line 3, got 'not an object'$"):
         IddFile.fromString(text="!IDD_Version 26.1.0\n\nnot an object\n")
+
+
+UNITS_HEADER = """!IDD_Version 26.1.0
+! Default IP conversions (no \\ip-units necessary)
+!      m                      =>   ft                  3.28083989501312
+!      m/s                    =>   ft/min              196.850393700787
+!      m/s                    =>   miles/hr            2.2369362920544
+!      C                      =>   F                   1.8 (plus 32)
+!      W                      =>   Btu/h               3.4121412858518
+!
+! Other conversions supported (needs the \\ip-units code)
+!
+!      m                      =>   in                  39.3700787401575
+!      W                      =>   W                   1
+!
+! Units fields that are not translated
+!      $
+!      W/m2, W or deg C
+! **************************************************************************
+"""
+
+
+def _units_idd(*properties: str) -> IddFile:
+    lines = "".join(f"       \\{p}\n" for p in properties)
+    return IddFile.fromString(text=f"{UNITS_HEADER}\nSome:Object,\n  N1 ; \\field Value\n{lines}")
+
+
+def _units_message(loglevel: LogLevel, msg: str) -> list[LogMessage]:
+    return [LogMessage(tool="idd-units", loglevel=loglevel, message=f"In 'Some:Object', field 'Value': {msg}")]
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        [],
+        ["units m"],
+        ["units $"],
+        ["units W/m2, W or deg C"],
+        ["units m", "ip-units in"],
+        # The second one listed in the default section isn't the default
+        ["units m/s", "ip-units miles/hr"],
+        # SI kept as IP
+        ["units W", "ip-units W"],
+    ],
+)
+def test_idd_file_validate_units_ok(properties):
+    assert _units_idd(*properties).validate() == []
+
+
+@pytest.mark.parametrize(
+    "properties, loglevel, msg",
+    [
+        (["ip-units ft"], LogLevel.ERROR, "\\ip-units 'ft' without \\units"),
+        (["units degs"], LogLevel.ERROR, "\\units 'degs' isn't in the units table of the header"),
+        (
+            ["units $", "ip-units unknown"],
+            LogLevel.ERROR,
+            "\\units '$' isn't translated, it can't have \\ip-units 'unknown'",
+        ),
+        (
+            ["units m/s", "ip-units ft/min"],
+            LogLevel.INFO,
+            "\\ip-units 'ft/min' is already the default for \\units 'm/s', remove it",
+        ),
+        (
+            ["units m", "ip-units Btu/h"],
+            LogLevel.ERROR,
+            "\\ip-units 'Btu/h' isn't a conversion of \\units 'm', expected one of: ft, in",
+        ),
+    ],
+)
+def test_idd_file_validate_units(properties, loglevel, msg):
+    assert _units_idd(*properties).validate() == _units_message(loglevel, msg)
+
+
+def test_idd_file_without_units_table_does_not_check_units():
+    idd_file = IddFile.fromString(
+        text="!IDD_Version 26.1.0\n\nSome:Object,\n  N1 ; \\field Value\n       \\units degs\n"
+    )
+    assert idd_file.units_table() is None
+    assert idd_file.validate() == []

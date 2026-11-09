@@ -58,7 +58,8 @@ energyplus-toolkit lint idd --fail-on warning --output-format json idd/
 ```
 
 Reports what parses but looks wrong, without changing the file: field ids that aren't consecutive, malformed extensible
-groups, a `\type` that doesn't match the field id (errors), and a `\required-field` with a `\default` (warning).
+groups, a `\type` that doesn't match the field id, `\units` and `\ip-units` that don't match the units table of the
+header (errors), a `\required-field` with a `\default` (warning), and an `\ip-units` that is already the default (info).
 
 Exit codes: 0 if nothing reached `--fail-on` (`error` by default), 1 otherwise.
 
