@@ -142,6 +142,16 @@ class IddObject:
         except ValueError:
             raise ValueError(self._format_error(f"Invalid {tag} value '{value}'")) from None
 
+    def _parse_valueless_flag(self, line: str, tag: str) -> bool:
+        """For a tag that takes no value, anything after it but a comment is an error, it would be lost.
+
+        That also catches a typo that starts like the tag, eg \\unique-objects.
+        """
+        rest = line[len(tag) :].split('!')[0].strip()
+        if rest:
+            raise ValueError(self._format_error(f"{tag} takes no value, got '{rest}'"))
+        return True
+
     @staticmethod
     def load(group: str, object_lines: list[str]) -> "IddObject":
         idd_object = IddObject(group=group)
@@ -179,10 +189,10 @@ class IddObject:
                     self.properties.memo += "\n" + memo_text
                 else:
                     self.properties.memo = memo_text
-            elif line.startswith('\\unique-object'):
-                self.properties.unique = True
-            elif line.startswith('\\required-object'):
-                self.properties.required = True
+            elif line.startswith(tag := '\\unique-object'):
+                self.properties.unique = self._parse_valueless_flag(line=line, tag=tag)
+            elif line.startswith(tag := '\\required-object'):
+                self.properties.required = self._parse_valueless_flag(line=line, tag=tag)
             elif line.startswith('\\obsolete'):
                 self.properties.obsolete = True
                 # usage, if a replacement is available:
@@ -194,8 +204,8 @@ class IddObject:
                     self.properties.obsolete_replacement = m.group(1).strip()
                 else:
                     raise ValueError(self._format_error(f"\\obsolete line is malformed: '{line}'"))
-            elif line.startswith('\\url-object'):
-                self.properties.hasUrl = True
+            elif line.startswith(tag := '\\url-object'):
+                self.properties.hasUrl = self._parse_valueless_flag(line=line, tag=tag)
             elif line.startswith(tag := '\\min-fields'):
                 min_fields_str = line[len(tag) :].strip()
                 self.properties.minFields = self._parse_int(tag=tag, value=min_fields_str)
