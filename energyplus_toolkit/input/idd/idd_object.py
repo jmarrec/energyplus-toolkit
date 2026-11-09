@@ -143,11 +143,13 @@ class IddObject:
             raise ValueError(self._format_error(f"Invalid {tag} value '{value}'")) from None
 
     def _parse_valueless_flag(self, line: str, tag: str) -> bool:
-        """For a tag that takes no value, anything after it but a comment is an error, it would be lost.
+        """For a tag that takes no value: anything after it is an error, it would be lost.
+
+        Comments should go in a \\memo anyways, so I also reject that.
 
         That also catches a typo that starts like the tag, eg \\unique-objects.
         """
-        rest = line[len(tag) :].split('!')[0].strip()
+        rest = line[len(tag) :].strip()
         if rest:
             raise ValueError(self._format_error(f"{tag} takes no value, got '{rest}'"))
         return True

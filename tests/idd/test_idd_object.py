@@ -672,18 +672,11 @@ def test_parse_idd_object_empty_memo_is_discarded(caplog) -> None:
 
 
 @pytest.mark.parametrize("tag", ["required-object", "unique-object", "url-object"])
-@pytest.mark.parametrize("rest", [" BLABLABLA", "s"])
+@pytest.mark.parametrize("rest", [" BLABLABLA", "s", " ! a comment"])
 def test_parse_idd_object_valueless_flag_with_a_value_is_an_error(tag, rest) -> None:
     """The text after it would be lost. "s" is a typo: \\unique-objects."""
     with pytest.raises(ValueError, match=f"^In 'Some:Object': \\\\{tag} takes no value, got '{rest.strip()}'$"):
         IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\{tag}{rest}", "  A1 ; \\field Name"])
-
-
-def test_parse_idd_object_valueless_flag_with_a_comment() -> None:
-    idd_object = IddObject.load(
-        group="Test", object_lines=["Some:Object,", "  \\unique-object ! just one", "  A1 ; \\field Name"]
-    )
-    assert idd_object.properties.unique
 
 
 @pytest.mark.parametrize("tag", ["required-object", "unique-object", "url-object"])
