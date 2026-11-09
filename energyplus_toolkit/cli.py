@@ -11,11 +11,12 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from energyplus_toolkit.format import runner
 from energyplus_toolkit.format.runner import Job, Kind, Mode
-from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS
 from energyplus_toolkit.input.log_message import LogLevel
 from energyplus_toolkit.lint import idd as lint_idd
 
@@ -70,6 +71,18 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
         help="Number of parallel processes (default: number of CPUs).",
     )
     p.add_argument("-q", "--quiet", action="store_true", help="Only print errors and the summary.")
+    if kind is Kind.IDD:
+        p.add_argument(
+            "--tag-column",
+            dest="idd_tag_column",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Column where the \\ of field and tag lines starts, eg \\field and \\note "
+                f"(default: {DEFAULT_FORMAT_OPTIONS.idd_tag_column})."
+            ),
+        )
     if kind is not Kind.IDD:
         p.add_argument(
             "--leading",
@@ -77,7 +90,7 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
             type=int,
             default=None,
             metavar="N",
-            help=f"Leading spaces before each object-type line (default: {idf_constants.IDF_LEADING}).",
+            help=f"Leading spaces before each object-type line (default: {DEFAULT_FORMAT_OPTIONS.leading}).",
         )
         p.add_argument(
             "--keep-integer-reals",
@@ -166,15 +179,20 @@ def _make_job(args, parser: argparse.ArgumentParser) -> Job:
     idd_path = getattr(args, "idd_path", None)
     if idd_path is not None and not idd_path.is_file():
         parser.error(f"IDD file not found: {idd_path}")
-    constants: list[tuple[str, object]] = []
+    format_options = DEFAULT_FORMAT_OPTIONS
     if getattr(args, "idf_leading", None) is not None:
         if args.idf_leading < 0:
             parser.error("--leading must be a non-negative integer.")
-        constants.append(("IDF_LEADING", args.idf_leading))
+        format_options = replace(format_options, leading=args.idf_leading)
     if getattr(args, "keep_integer_reals", False):
-        constants.append(("IDF_KEEP_INTEGER_REALS", True))
+        format_options = replace(format_options, keep_integer_reals=True)
+    if getattr(args, "idd_tag_column", None) is not None:
+        # Room for the shortest field line start, "  A1, "
+        if args.idd_tag_column < 6:
+            parser.error("--tag-column must be at least 6.")
+        format_options = replace(format_options, idd_tag_column=args.idd_tag_column)
     mode = Mode.CHECK if args.check else Mode.DIFF if args.diff else Mode.WRITE
-    return Job(kind=kind, mode=mode, idd_path=idd_path, constants=tuple(constants))
+    return Job(kind=kind, mode=mode, idd_path=idd_path, format_options=format_options)
 
 
 def main(args_: list[str] | None = None) -> int:
@@ -195,7 +213,7 @@ def main(args_: list[str] | None = None) -> int:
         if len(args.paths) != 1 or args.paths[0].is_dir():
             parser.error("-o/--output needs exactly one input file.")
         runner.init_worker(job)
-        text = runner.reformat_text(job.kind, args.paths[0].read_text(encoding="utf-8"))
+        text = runner.reformat_text(job.kind, args.paths[0].read_text(encoding="utf-8"), job.format_options)
         if str(args.output_path) == "-":
             sys.stdout.write(text)
         else:

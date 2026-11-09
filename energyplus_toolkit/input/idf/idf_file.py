@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
@@ -257,21 +258,25 @@ class IdfFile:
     # ------------------------------------------------------------------
 
     def __str__(self) -> str:
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+        """The file as written, laid out according to ``options``."""
         parts: list[str] = []
         if self.header:
             parts.append(self.header)
             parts.append("")
         for obj in self._objects:
-            parts.append(str(obj))
+            parts.append(obj.to_string(options))
         return "\n".join(parts)
 
-    def save(self, path: Path | str, overwrite: bool = False) -> bool:
+    def save(self, path: Path | str, overwrite: bool = False, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> bool:
         """Write the file to *path*.  Returns True on success."""
         p = Path(path)
         if p.exists() and not overwrite:
             LOG.error(f"File '{p}' already exists and overwrite=False")
             return False
-        p.write_text(str(self), encoding="utf-8")
+        p.write_text(self.to_string(options), encoding="utf-8")
         return True
 
     def __repr__(self) -> str:

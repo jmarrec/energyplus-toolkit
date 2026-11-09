@@ -22,8 +22,8 @@ from enum import Enum
 from pathlib import Path
 
 from energyplus_toolkit.format.cpp.unit_test_file import UnitTestFile
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
 from energyplus_toolkit.input.idd.idd_file import IddFile
-from energyplus_toolkit.input.idf import idf_constants
 from energyplus_toolkit.input.idf.idf_file import IdfFile, find_lost_objects, find_text_outside_fields
 
 LOG = logging.getLogger("Runner")
@@ -66,7 +66,7 @@ class Job:
     kind: Kind
     mode: Mode
     idd_path: Path | None = None
-    constants: tuple[tuple[str, object], ...] = ()  # idf_constants overrides, eg (("IDF_LEADING", 2),)
+    format_options: FormatOptions = DEFAULT_FORMAT_OPTIONS  # How IDF (and unit test IDF) is written
 
 
 @dataclass
@@ -108,16 +108,13 @@ def collect_files(paths: list[Path], kind: Kind, exclude: re.Pattern[str] | None
 
 _job: Job | None = None
 _idd: IddFile | None = None
-_DEFAULT_CONSTANTS = {name: getattr(idf_constants, name) for name in ("IDF_LEADING", "IDF_KEEP_INTEGER_REALS")}
 
 
 def init_worker(job: Job) -> None:
-    """Set the idf_constants overrides and load the IDD, unless already done (eg inherited through fork)."""
+    """Load the IDD, unless already done (eg inherited through fork)."""
     global _job, _idd
     if _job == job:
         return
-    for name, value in (*_DEFAULT_CONSTANTS.items(), *job.constants):  # defaults first: a previous job's overrides go
-        setattr(idf_constants, name, value)
     if not job.kind.needs_idd or job.idd_path is None:
         _idd = None
     elif _idd is None or _job is None or _job.idd_path != job.idd_path:
@@ -125,9 +122,10 @@ def init_worker(job: Job) -> None:
     _job = job
 
 
-def reformat_text(kind: Kind, text: str) -> str:
+def reformat_text(kind: Kind, text: str, format_options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+    """``text`` reformatted, laid out according to ``format_options``."""
     if kind is Kind.IDD:
-        return str(IddFile.fromString(text))
+        return IddFile.fromString(text).to_string(format_options)
     assert _idd is not None, "init_worker must be called first"
     if kind is Kind.IDF:
         if _PARAMETRIC_RE.search(text):
@@ -141,8 +139,8 @@ def reformat_text(kind: Kind, text: str) -> str:
         if (reason := find_lost_objects(text, idf)) is not None:
             LOG.warning(f"{reason} — leaving unchanged")
             return text
-        return str(idf)
-    return UnitTestFile(text).reformat(_idd)
+        return idf.to_string(format_options)
+    return UnitTestFile(text).reformat(_idd, format_options)
 
 
 class _Collect(logging.Handler):
@@ -165,7 +163,7 @@ def process_file(path: Path) -> Result:
         with open(path, encoding="utf-8", newline="") as f:
             original = f.read()
         crlf = "\r\n" in original
-        new = reformat_text(_job.kind, original.replace("\r\n", "\n"))
+        new = reformat_text(_job.kind, original.replace("\r\n", "\n"), _job.format_options)
         if not new.endswith("\n") and original.endswith(("\n", "\r\n")):
             new += "\n"
         if crlf:

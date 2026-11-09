@@ -2,7 +2,8 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 
-from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
+from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE
 from energyplus_toolkit.input.idd.idd_regex import RE_GROUP_NUMBER
 from energyplus_toolkit.input.idd.idd_units import UnitsTable
 from energyplus_toolkit.input.log_message import LogLevel, LogMessage
@@ -169,66 +170,70 @@ class IddFieldProperties:
         return not self.__eq__(other)
 
     def __str__(self) -> str:
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         """Render this field's properties in IDD-style text."""
+        indent = options.idd_tag_indent
         lines: list[str] = []
 
         # First, like in most of EnergyPlus' IDD: the extensible group starts here
         if self.beginExtensible:
-            lines.append(f"{BLOCK_INDENT}\\begin-extensible")
+            lines.append(f"{indent}\\begin-extensible")
 
         # Notes
         if self.note:
             for line in self.note.splitlines():
-                lines.append(f"{BLOCK_INDENT}\\note {line}")
+                lines.append(f"{indent}\\note {line}")
 
         # Type
         if self.type != IddFieldType.UnknownType:
-            lines.append(f"{BLOCK_INDENT}\\type {self.type.value}")
+            lines.append(f"{indent}\\type {self.type.value}")
 
         # Simple flags
         if self.required:
-            lines.append(f"{BLOCK_INDENT}\\required-field")
+            lines.append(f"{indent}\\required-field")
         if self.autosizable:
-            lines.append(f"{BLOCK_INDENT}\\autosizable")
+            lines.append(f"{indent}\\autosizable")
         if self.autocalculatable:
-            lines.append(f"{BLOCK_INDENT}\\autocalculatable")
+            lines.append(f"{indent}\\autocalculatable")
         if self.retaincase:
-            lines.append(f"{BLOCK_INDENT}\\retaincase")
+            lines.append(f"{indent}\\retaincase")
         if self.deprecated:
-            lines.append(f"{BLOCK_INDENT}\\deprecated")
+            lines.append(f"{indent}\\deprecated")
 
         # Units
         if self.units:
-            lines.append(f"{BLOCK_INDENT}\\units {self.units}")
+            lines.append(f"{indent}\\units {self.units}")
         if self.ipUnits:
-            lines.append(f"{BLOCK_INDENT}\\ip-units {self.ipUnits}")
+            lines.append(f"{indent}\\ip-units {self.ipUnits}")
         if self.unitsBasedOnField:
-            lines.append(f"{BLOCK_INDENT}\\unitsBasedOnField {self.unitsBasedOnField}")
+            lines.append(f"{indent}\\unitsBasedOnField {self.unitsBasedOnField}")
 
         # Bounds
         if self.minBoundType == BoundTypes.InclusiveBound and self.minBoundValue is not None:
-            lines.append(f"{BLOCK_INDENT}\\minimum {self.minBoundValue}")
+            lines.append(f"{indent}\\minimum {self.minBoundValue}")
         elif self.minBoundType == BoundTypes.ExclusiveBound and self.minBoundValue is not None:
-            lines.append(f"{BLOCK_INDENT}\\minimum> {self.minBoundValue}")
+            lines.append(f"{indent}\\minimum> {self.minBoundValue}")
 
         if self.maxBoundType == BoundTypes.InclusiveBound and self.maxBoundValue is not None:
-            lines.append(f"{BLOCK_INDENT}\\maximum {self.maxBoundValue}")
+            lines.append(f"{indent}\\maximum {self.maxBoundValue}")
         elif self.maxBoundType == BoundTypes.ExclusiveBound and self.maxBoundValue is not None:
-            lines.append(f"{BLOCK_INDENT}\\maximum< {self.maxBoundValue}")
+            lines.append(f"{indent}\\maximum< {self.maxBoundValue}")
 
         # Defaults
         if self.stringDefault:
-            lines.append(f"{BLOCK_INDENT}\\default {self.stringDefault}")
+            lines.append(f"{indent}\\default {self.stringDefault}")
 
         # Lists
         for obj in self.objectLists:
-            lines.append(f"{BLOCK_INDENT}\\object-list {obj}")
+            lines.append(f"{indent}\\object-list {obj}")
         for ref in self.references:
-            lines.append(f"{BLOCK_INDENT}\\reference {ref}")
+            lines.append(f"{indent}\\reference {ref}")
         for ref in self.referenceClassNames:
-            lines.append(f"{BLOCK_INDENT}\\reference-class-name {ref}")
+            lines.append(f"{indent}\\reference-class-name {ref}")
         for ext in self.externalLists:
-            lines.append(f"{BLOCK_INDENT}\\external-list {ext}")
+            lines.append(f"{indent}\\external-list {ext}")
 
         return "\n".join(lines)
 
@@ -252,7 +257,10 @@ class IddKey:
         return self.name
 
     def __str__(self):
-        return f"{BLOCK_INDENT}\\key {self.name}"
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+        return f"{options.idd_tag_indent}\\key {self.name}"
 
 
 @dataclass(frozen=True)
@@ -640,17 +648,25 @@ class IddField:
             return self.name
         return self._extensible_group_numbering.idd_name()
 
+    def _field_and_properties_text(self, options: FormatOptions) -> str:
+        """Its \\field line and properties, written as in the IDD."""
+        separator = ";" if self.is_last_field else ","
+        # "  A1 , " up to the tag column, where "\field" starts like the other tags
+        leading = f"  {self.field_id.ljust(options.idd_tag_column - 4)}{separator} "
+        return f"{leading}\\field {self._idd_name()}\n{self.properties.to_string(options)}"
+
     def __repr__(self):
         """The field's IDD text: its \\field line and properties, written as in the IDD (``__str__`` adds the keys)."""
-        return (
-            f"{format_leading(field_id=self.field_id, is_last_field=self.is_last_field)}"
-            f"\\field {self._idd_name()}\n{self.properties}"
-        )
+        return self._field_and_properties_text(DEFAULT_FORMAT_OPTIONS)
 
     def __str__(self):
-        parts = [self.__repr__()]
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+        """The field as written in the IDD, with its keys, laid out according to ``options``."""
+        parts = [self._field_and_properties_text(options)]
         for k in self.keys:
-            parts.append(str(k))
+            parts.append(k.to_string(options))
         return "\n".join(parts)
 
     def _validate_type_matches_field_id(self) -> list[LogMessage]:

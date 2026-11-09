@@ -2,9 +2,11 @@ import logging
 
 import pytest
 
-from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS
 from energyplus_toolkit.input.idd.idd_field import IddFieldParseError
 from energyplus_toolkit.input.idd.idd_object import IddObject, IddObjectFormat, IddObjectProperties
+
+BLOCK_INDENT = DEFAULT_FORMAT_OPTIONS.idd_tag_indent
 
 
 def test_idd_object_properties() -> None:

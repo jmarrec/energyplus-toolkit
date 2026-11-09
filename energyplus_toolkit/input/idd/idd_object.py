@@ -3,7 +3,7 @@ import math
 import re
 from enum import StrEnum
 
-from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
 from energyplus_toolkit.input.idd.idd_field import FieldTypeChar, IddField
 from energyplus_toolkit.input.idd.idd_regex import RE_FIELD_START
 from energyplus_toolkit.input.idd.idd_units import UnitsTable
@@ -74,34 +74,38 @@ class IddObjectProperties:
         self.maxFields: int | None = None
 
     def __str__(self) -> str:
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+        indent = options.idd_tag_indent
         lines = []
 
         # Most important properties first
         if self.obsolete:
             replacement = f" New=>{self.obsolete_replacement}" if self.obsolete_replacement else ""
-            lines.append(f"{BLOCK_INDENT}\\obsolete{replacement}")
+            lines.append(f"{indent}\\obsolete{replacement}")
         if self.unique:
-            lines.append(f"{BLOCK_INDENT}\\unique-object")
+            lines.append(f"{indent}\\unique-object")
         if self.required:
-            lines.append(f"{BLOCK_INDENT}\\required-object")
+            lines.append(f"{indent}\\required-object")
         if self.hasUrl:
-            lines.append(f"{BLOCK_INDENT}\\url-object")
+            lines.append(f"{indent}\\url-object")
 
         # Memo lines
         if self.memo:
             for line in self.memo.splitlines():
-                lines.append(f"{BLOCK_INDENT}\\memo {line}")
+                lines.append(f"{indent}\\memo {line}")
 
         # Object field layout and formatting properties
         if self.extensible:
-            lines.append(f"{BLOCK_INDENT}\\extensible:{self.numExtensible}")
+            lines.append(f"{indent}\\extensible:{self.numExtensible}")
         if self.minFields > 0:
-            lines.append(f"{BLOCK_INDENT}\\min-fields {self.minFields}")
+            lines.append(f"{indent}\\min-fields {self.minFields}")
         if self.maxFields is not None:
-            lines.append(f"{BLOCK_INDENT}\\max-fields {self.maxFields}")
+            lines.append(f"{indent}\\max-fields {self.maxFields}")
 
         if self.format is not None:
-            lines.append(f"{BLOCK_INDENT}\\format {self.format.value}")
+            lines.append(f"{indent}\\format {self.format.value}")
 
         return "\n".join(lines)
 
@@ -345,6 +349,10 @@ class IddObject:
         return None
 
     def __str__(self) -> str:
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+        """The object as written in the IDD, laid out according to ``options``."""
         lines = []
 
         num_fields = len(self.fields) + len(self.extensible_fields)
@@ -359,11 +367,11 @@ class IddObject:
 
         if not self.fields and not self.extensible_fields:
             lines.append(f"{self.name};")
-            lines.append(str(self.properties))
+            lines.append(self.properties.to_string(options))
             lines.append("")  # blank line at the end
         else:
             lines.append(f"{self.name},")
-            lines.append(str(self.properties))
+            lines.append(self.properties.to_string(options))
 
             # print regular fields, writing back the ones declared without a name compactly, as they were
             unnamed_run: list[IddField] = []
@@ -374,14 +382,14 @@ class IddObject:
                 lines.extend(_compact_field_lines(unnamed_run))
                 unnamed_run = []
                 if field is not None:
-                    lines.append(str(field))
+                    lines.append(field.to_string(options))
 
             # print extensible fields
             for i, field in enumerate(self.extensible_fields):
                 if adding_extra:
                     prev_status = field.is_last_field
                     field.is_last_field = False
-                lines.append(str(field))
+                lines.append(field.to_string(options))
                 if adding_extra:
                     field.is_last_field = prev_status
 

@@ -1,7 +1,7 @@
 import pytest
 
+from energyplus_toolkit.input.format_options import FormatOptions
 from energyplus_toolkit.input.idd.idd_object import IddObject
-from energyplus_toolkit.input.idf import idf_constants
 from energyplus_toolkit.input.idf.idf_field import FieldValidationError, NumericMode
 from energyplus_toolkit.input.idf.idf_object import IdfObject, IdfObjectError
 
@@ -410,11 +410,11 @@ def test_idf_object_single_line_keeps_zero_in_the_middle():
     assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0.0,0.0,19.5;"
 
 
-def test_idf_object_single_line_keeps_integer_reals(monkeypatch):
-    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+def test_idf_object_single_line_keeps_integer_reals():
     idd_obj = make_idd_object(GROUND_TEMPERATURE_IDD)
     obj = IdfObject.load(idd_object=idd_obj, text="Site:GroundTemperature:BuildingSurface,0,18.0,19.5;")
-    assert str(obj).strip() == "Site:GroundTemperature:BuildingSurface,0,18.0,19.5;"
+    text = obj.to_string(FormatOptions(keep_integer_reals=True))
+    assert text.strip() == "Site:GroundTemperature:BuildingSurface,0,18.0,19.5;"
 
 
 def test_idf_object_single_line_still_trims_trailing_empty_fields():
@@ -764,12 +764,9 @@ SimulationControl,
 
 
 @pytest.mark.parametrize("leading", [0, 2, 4])
-def test_idf_object_str_exact_simulation_control(monkeypatch, leading):
-    """Serialisation matches the canonical EnergyPlus IDF format for IDF_LEADING=0 and 2."""
-    from energyplus_toolkit.input.idf import idf_constants
-
-    monkeypatch.setattr(idf_constants, "IDF_LEADING", leading)
-
+def test_idf_object_str_exact_simulation_control(leading):
+    """Serialisation matches the canonical EnergyPlus IDF format for leading 0, 2 and 4."""
+    options = FormatOptions(leading=leading)
     idd_obj = make_idd_object(SIMULATION_CONTROL_7_FIELDS_IDD)
     idf_text = """
 SimulationControl,
@@ -784,7 +781,7 @@ SimulationControl,
     obj = IdfObject.load(idd_object=idd_obj, text=idf_text)
 
     L = " " * leading
-    indent = " " * (leading + idf_constants.IDF_INDENT)
+    indent = " " * (leading + options.indent)
     expected = "\n".join(
         [
             f"{L}SimulationControl,",
@@ -799,7 +796,7 @@ SimulationControl,
         ]
     )
 
-    assert str(obj) == expected
+    assert obj.to_string(options) == expected
 
 
 def test_idf_object_str_long_value_fallback_padding():
