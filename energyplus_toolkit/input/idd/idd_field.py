@@ -304,6 +304,8 @@ class IddField:
         self.field_type_char: FieldTypeChar = FieldTypeChar.UnknownType
         # Declared without a \field name, on a compact line ("N1, N2, N3,"): written back that way
         self.unnamed: bool = False
+        # Where the field starts in its IDD file, if known: the line of its lint messages
+        self.line_number: int | None = None
         self.objectName: str = objectName  # Name of IddObject to which this field belongs
         self.properties: IddFieldProperties = IddFieldProperties()
         self.keys: list[IddKey] = []
@@ -314,11 +316,13 @@ class IddField:
         # Where the group number goes in its name, for an extensible field
         self._extensible_group_numbering: ExtensibleGroupNumbering | None = None
 
-    def _format_error(self, error_msg: str) -> str:
+    def _format_error(self, error_msg: str, include_line_number: bool = True) -> str:
         """Prefix ``error_msg`` with where it happened. The field name isn't known yet at the start of parsing."""
         where = f"In '{self.objectName}'"
         if self.name:
             where += f", field '{self.name}'"
+        if include_line_number and self.line_number is not None:
+            where += f", line {self.line_number}"
         return f"{where}: {error_msg}"
 
     def _parse_float(self, tag: str, value: str) -> float:
@@ -506,8 +510,10 @@ class IddField:
             raise ValueError(self._format_error(f"Unknown field property text '{text}'"))
 
     @staticmethod
-    def load(objectName: str, field_lines: list[str]) -> "IddField":
+    def load(objectName: str, field_lines: list[str], line_number: int | None = None) -> "IddField":
+        """``line_number``: where the field starts in the IDD file, if known."""
         field = IddField(objectName=objectName)
+        field.line_number = line_number
         field._parse(field_lines=field_lines)
         return field
 
@@ -652,14 +658,25 @@ class IddField:
         if self.properties.type in IddFieldType.allowable_types_for_field_char(fieldTypeChar=self.field_type_char):
             return []
         msg = f"Field has \\type {self.properties.type} but field ID '{self.field_id}' is not compatible with that type"
-        return [LogMessage(tool="idd-field-type", loglevel=LogLevel.ERROR, message=self._format_error(msg))]
+        return [
+            LogMessage(
+                tool="idd-field-type",
+                loglevel=LogLevel.ERROR,
+                message=self._format_error(msg, include_line_number=False),
+                line_number=self.line_number,
+            )
+        ]
 
     def _validate_not_both_required_and_default(self) -> list[LogMessage]:
         """Validate that the field is not BOTH required-field and has a default."""
         if not self.properties.required or self.properties.stringDefault is None:
             return []
-        msg = self._format_error("Field has \\default, remove \\required-field")
-        return [LogMessage(tool="idd-required-default", loglevel=LogLevel.WARNING, message=msg)]
+        msg = self._format_error("Field has \\default, remove \\required-field", include_line_number=False)
+        return [
+            LogMessage(
+                tool="idd-required-default", loglevel=LogLevel.WARNING, message=msg, line_number=self.line_number
+            )
+        ]
 
     def _validate_units(self, units_table: UnitsTable) -> list[LogMessage]:
         """\\units and \\ip-units against the units table of the IDD header. Replaces EnergyPlus'
@@ -667,7 +684,14 @@ class IddField:
         si, ip = self.properties.units, self.properties.ipUnits
 
         def message(loglevel: LogLevel, msg: str) -> list[LogMessage]:
-            return [LogMessage(tool="idd-units", loglevel=loglevel, message=self._format_error(msg))]
+            return [
+                LogMessage(
+                    tool="idd-units",
+                    loglevel=loglevel,
+                    message=self._format_error(msg, include_line_number=False),
+                    line_number=self.line_number,
+                )
+            ]
 
         if not si:
             if ip:
