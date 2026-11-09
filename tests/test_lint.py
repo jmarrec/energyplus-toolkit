@@ -11,6 +11,7 @@ from energyplus_toolkit.input.idd.idd_field import IddField
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.log_message import LogLevel, LogMessage
+from energyplus_toolkit.lint.idd import lint_file
 
 RESOURCES = Path(__file__).parent / "resources"
 IDD = RESOURCES / "V26-1-0-Energy+.idd"
@@ -200,6 +201,7 @@ def test_cli_lint_json(error_idd, capsys):
         "loglevel": "Error",
         "filename": "error.idd",
         "file": str(error_idd),
+        "line": 3,
         "message": "In 'Some:Object', field 'Name': expected field ID A1, got A2",
     }
 
@@ -210,7 +212,7 @@ def test_cli_lint_github_actions(error_idd, capsys, monkeypatch):
     assert main(["lint", "idd", "--output-format", "gha", error_idd.name]) == 1
     first = capsys.readouterr().out.splitlines()[0]
     assert first.startswith(
-        f"::error file={error_idd.name},line=1,title=idd-field-ids::In 'Some:Object', field 'Name': "
+        f"::error file={error_idd.name},line=3,title=idd-field-ids::In 'Some:Object', field 'Name': "
     )
 
 
@@ -282,3 +284,10 @@ def test_cli_lint_info_is_only_printed_if_verbose(info_idd, capsys, args, printe
     # Always counted
     assert summary.endswith("We found 1 Info(s).")
     assert code == (1 if "--fail-on" in args else 0)
+
+
+def test_lint_messages_have_the_line_of_their_object(tmp_path):
+    path = tmp_path / "lines.idd"
+    path.write_text(_idd("  A1 , \\field Name", "  A3 ; \\field Other", "", "Other:Object,", "  A2 ; \\field Name"))
+    # Some:Object is on line 3, Other:Object on line 7
+    assert [(msg.line_number, msg.tool) for msg in lint_file(path)] == [(3, "idd-field-ids"), (7, "idd-field-ids")]

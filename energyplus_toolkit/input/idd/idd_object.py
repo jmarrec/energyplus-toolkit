@@ -1,6 +1,7 @@
 import logging
 import math
 import re
+from dataclasses import replace
 from enum import StrEnum
 
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
@@ -132,6 +133,9 @@ class IddObject:
         # This is ONLY to please the IDF Editor, but that's what it is...
         self._original_number_of_fields: int = 0
 
+        # Where the object starts in its IDD file, if known: the line of all its lint messages
+        self.line_number: int | None = None
+
     def _format_error(self, error_msg: str) -> str:
         """Prefix ``error_msg`` with where it happened, like IddField._format_error."""
         return f"In '{self.name}': {error_msg}"
@@ -156,8 +160,9 @@ class IddObject:
         return True
 
     @staticmethod
-    def load(group: str, object_lines: list[str]) -> "IddObject":
+    def load(group: str, object_lines: list[str], line_number: int | None = None) -> "IddObject":
         idd_object = IddObject(group=group)
+        idd_object.line_number = line_number
         idd_object._parse(object_lines=object_lines)
         return idd_object
 
@@ -452,4 +457,5 @@ class IddObject:
         messages = self._validate_extensible_fields() + self._validate_monotonic_field_ids()
         for field in self.fields + self.extensible_fields:
             messages += field.validate(units_table=units_table)
-        return messages
+        # The fields don't know where they are
+        return [replace(m, line_number=self.line_number) if m.line_number is None else m for m in messages]

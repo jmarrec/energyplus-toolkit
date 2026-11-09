@@ -97,6 +97,8 @@ class IddFile:
 
                 # Collect full text of the object
                 text_lines = [line]
+                # The version line was popped, and line_number is already past this line
+                object_line_number = line_number + 1
                 # found_closing_line = bool(RE_OBJECT_NO_FIELDS.match(line)) or bool(RE_CLOSING_FIELD.match(line))
 
                 while line_number < total_lines:
@@ -111,7 +113,7 @@ class IddFile:
                             found_closing_line = True
 
                 # try:
-                obj = IddObject.load(group=current_group, object_lines=text_lines)
+                obj = IddObject.load(group=current_group, object_lines=text_lines, line_number=object_line_number)
                 assert obj.name == object_name
                 self.objects.append(obj)
             # except Exception as e:

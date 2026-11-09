@@ -234,7 +234,9 @@ def _units_idd(*properties: str) -> IddFile:
 
 
 def _units_message(loglevel: LogLevel, msg: str) -> list[LogMessage]:
-    return [LogMessage(tool="idd-units", loglevel=loglevel, message=f"In 'Some:Object', field 'Value': {msg}")]
+    # Some:Object is on line 19, after the header
+    message = f"In 'Some:Object', field 'Value': {msg}"
+    return [LogMessage(tool="idd-units", loglevel=loglevel, message=message, line_number=19)]
 
 
 @pytest.mark.parametrize(
