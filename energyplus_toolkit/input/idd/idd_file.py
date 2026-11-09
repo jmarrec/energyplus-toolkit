@@ -24,7 +24,7 @@ class IddFile:
 
     @staticmethod
     def load(path: Path) -> "IddFile":
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         return IddFile.fromString(text=text)
 
     @staticmethod

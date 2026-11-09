@@ -10,7 +10,7 @@ INPUT_FILES = sorted((PACKAGE / "input").rglob("*.py"))
 
 
 def _imported_modules(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     modules: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

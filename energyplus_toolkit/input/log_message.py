@@ -106,7 +106,7 @@ class LogMessage:
 
         properties = []
         if self.filepath is not None:
-            properties.append(f"file={_escape_property(str(self.filepath))}")
+            properties.append(f"file={_escape_property(self.filepath.as_posix())}")
             # GitHub needs a line to place it in the file
             properties.append(f"line={self.line_number or 1}")
         properties.append(f"title={_escape_property(self.tool)}")
