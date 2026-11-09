@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
@@ -473,7 +475,6 @@ SimulationControl,
     [
         (r"\obsolete New=>deleted", "deleted"),
         (r"\obsolete New=>Some:Other:Object", "Some:Other:Object"),
-        (r"\obsolete", ""),
     ],
 )
 def test_parse_idd_object_obsolete(obsolete_line, replacement) -> None:
@@ -650,6 +651,29 @@ def test_idd_object_cannot_adjust_fields_says_where() -> None:
     ]
     with pytest.raises(ValueError, match="^In 'Some:Object': Cannot adjust number of fields"):
         str(IddObject.load(group="Test", object_lines=object_lines))
+
+
+@pytest.mark.parametrize("tag", ["extensible:", "format", "max-fields", "min-fields", "obsolete"])
+def test_parse_idd_object_stray_property_is_an_error(tag) -> None:
+    """An object property that takes a value, left alone on its line (see EnergyPlus' check_stray_fields_in_idd.py)."""
+    with pytest.raises(ValueError, match="Some:Object"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\{tag}", "  A1 ; \\field Name"])
+
+
+def test_parse_idd_object_empty_memo_is_discarded(caplog) -> None:
+    """Nothing is lost: an empty \\memo is dropped, with an info message."""
+    with caplog.at_level(logging.INFO, logger="IddObject"):
+        idd_object = IddObject.load(
+            group="Test", object_lines=["Some:Object,", "  \\memo First", "  \\memo", "  A1 ; \\field Name"]
+        )
+    assert idd_object.properties.memo == "First"
+    assert "\\memo" not in str(idd_object).replace("\\memo First", "")
+    assert "In 'Some:Object': \\memo line is empty" in caplog.text
+
+
+@pytest.mark.parametrize("tag", ["required-object", "unique-object", "url-object"])
+def test_parse_idd_object_property_without_value_is_not_stray(tag) -> None:
+    IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\{tag}", "  A1 ; \\field Name"])
 
 
 def test_parse_idd_object_begin_extensible_on_last_field() -> None:

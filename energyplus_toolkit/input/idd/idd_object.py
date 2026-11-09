@@ -173,7 +173,9 @@ class IddObject:
 
             if line.startswith('\\memo'):
                 memo_text = line[len('\\memo') :].strip()
-                if self.properties.memo:
+                if not memo_text:
+                    LOG.info(self._format_error(f"\\memo line is empty: '{line}', discarding it"))
+                elif self.properties.memo:
                     self.properties.memo += "\n" + memo_text
                 else:
                     self.properties.memo = memo_text
@@ -187,8 +189,11 @@ class IddObject:
                 #       \obsolete New=>[New object name]
                 #   usage, if no replacement is available:
                 #       \obsolete New=>deleted
-                m = re.match(r"\\obsolete\s*(?:New=>)?(.*)", line)
-                self.properties.obsolete_replacement = m.group(1).strip() if m else ""
+                m = re.match(r"\\obsolete\s+New=>\s*(\S.*?)\s*$", line)
+                if m:
+                    self.properties.obsolete_replacement = m.group(1).strip()
+                else:
+                    raise ValueError(self._format_error(f"\\obsolete line is malformed: '{line}'"))
             elif line.startswith('\\url-object'):
                 self.properties.hasUrl = True
             elif line.startswith(tag := '\\min-fields'):
