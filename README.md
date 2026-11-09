@@ -62,6 +62,8 @@ groups, a `\type` that doesn't match the field id (errors), and a `\required-fie
 
 Exit codes: 0 if nothing reached `--fail-on` (`error` by default), 1 otherwise.
 
+Info messages are counted in the summary but only printed with `--verbose` (or `--fail-on info`).
+
 `--output-format`: `text` (default), `json` (one object per message, with the keys of EnergyPlus'
 `scripts/dev/base_hook.py`), or `gha` (GitHub Actions annotations, shown on the PR). The text is colored on a terminal
 and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them on.

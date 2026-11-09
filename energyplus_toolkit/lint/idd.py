@@ -27,10 +27,16 @@ def lint_file(path: Path) -> list[LogMessage]:
     return [replace(msg, filepath=path) for msg in messages]
 
 
-def report(messages: list[LogMessage], fail_on: LogLevel, output_format: OutputFormat) -> int:
-    """Print the messages, most severe first, and a summary. Returns the exit code: 1 if any is at least ``fail_on``."""
+def report(messages: list[LogMessage], fail_on: LogLevel, output_format: OutputFormat, verbose: bool = False) -> int:
+    """Print the messages, most severe first, and a summary. Returns the exit code: 1 if any is at least ``fail_on``.
+
+    Like EnergyPlus' base_hook.py, INFO is only printed if ``verbose`` (or if it fails), but always counted.
+    """
+    min_printed = LogLevel.INFO if verbose or fail_on == LogLevel.INFO else LogLevel.WARNING
     color = use_color()
     for msg in sorted(messages, key=lambda msg: -msg.loglevel):
+        if msg.loglevel < min_printed:
+            continue
         if output_format == OutputFormat.TEXT:
             print(msg.format(color=color))
         elif output_format == OutputFormat.JSON:

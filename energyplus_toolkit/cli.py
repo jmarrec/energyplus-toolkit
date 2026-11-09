@@ -121,6 +121,12 @@ def _add_lint_idd_subcommand(subparsers) -> None:
             "annotations (default: text)."
         ),
     )
+    p.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Also print the info messages, which are only counted otherwise (always printed with --fail-on info).",
+    )
 
 
 def _lint(args) -> int:
@@ -129,7 +135,9 @@ def _lint(args) -> int:
         print("No files to lint.", file=sys.stderr)
         return 0
     messages = [msg for path in files for msg in lint_idd.lint_file(path)]
-    return lint_idd.report(messages, fail_on=LogLevel[args.fail_on], output_format=args.output_format)
+    return lint_idd.report(
+        messages, fail_on=LogLevel[args.fail_on], output_format=args.output_format, verbose=args.verbose
+    )
 
 
 def get_parser() -> argparse.ArgumentParser:

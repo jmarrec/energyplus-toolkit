@@ -256,3 +256,29 @@ def test_log_message_color_only_adds_ansi_codes():
     colored = msg.format(color=True)
     assert "\033[" in colored
     assert re.sub(r"\033\[[0-9;]*m", "", colored) == str(msg) == msg.format()
+
+
+@pytest.fixture
+def info_idd(tmp_path) -> Path:
+    """An \\ip-units that is already the default: an info."""
+    header = (
+        "!IDD_Version 26.1.0\n"
+        "! Default IP conversions (no \\ip-units necessary)\n"
+        "!      m                      =>   ft                  3.28083989501312\n"
+        "! **************************************************************************\n"
+    )
+    path = tmp_path / "info.idd"
+    path.write_text(f"{header}\nSome:Object,\n  N1 ; \\field Value\n       \\units m\n       \\ip-units ft\n")
+    return path
+
+
+@pytest.mark.parametrize(
+    "args, printed",
+    [([], []), (["--verbose"], ["Info"]), (["--fail-on", "info"], ["Info"])],
+)
+def test_cli_lint_info_is_only_printed_if_verbose(info_idd, capsys, args, printed):
+    code, messages, summary = _lint_json(capsys, *args, str(info_idd))
+    assert [m["loglevel"] for m in messages] == printed
+    # Always counted
+    assert summary.endswith("We found 1 Info(s).")
+    assert code == (1 if "--fail-on" in args else 0)
