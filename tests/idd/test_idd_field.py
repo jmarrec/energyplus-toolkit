@@ -444,6 +444,55 @@ def test_parse_valueless_flag_with_a_value_is_an_error(tag, rest):
         IddField.load(objectName="Some:Object", field_lines=field_lines)
 
 
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "default",
+        "external-list",
+        "ip-units",
+        "key",
+        "maximum",
+        "minimum",
+        "object-list",
+        "reference",
+        "reference-class-name",
+        "type",
+        "units",
+        "unitsBasedOnField",
+    ],
+)
+@pytest.mark.parametrize("field_id, field_type", [("A1", "alpha"), ("N1", "real")])
+def test_parse_stray_property_is_an_error(tag, field_id, field_type):
+    """A property that takes a value, left alone on its line."""
+    field_lines = [f"  {field_id} , \\field Name", f"       \\type {field_type}", f"       \\{tag}"]
+    with pytest.raises((ValueError, IddFieldParseError), match="^In 'Some:Object', field 'Name': "):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
+@pytest.mark.parametrize(
+    "tag", ["autosizable", "autocalculatable", "begin-extensible", "deprecated", "required-field", "retaincase"]
+)
+def test_parse_property_without_value_is_not_stray(tag):
+    IddField.load(
+        objectName="Some:Object", field_lines=["  N1 , \\field Name", "       \\type real", f"       \\{tag}"]
+    )
+
+
+@pytest.mark.parametrize("tag", ["note", "memo"])
+def test_empty_note_is_discarded(caplog, tag):
+    """Like an empty \\memo in IddObject: dropped, with an info message."""
+    field_lines = ["  A1 , \\field Name", "       \\note First", f"       \\{tag}", "       \\note Second"]
+    with caplog.at_level(logging.INFO, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=field_lines)
+    assert field.properties.note == "First\nSecond"
+    assert f"In 'Some:Object', field 'Name': \\{tag} line is empty" in caplog.text
+
+
+def test_note_keeps_its_exclamation_mark():
+    field_lines = ["  A1 , \\field Name", "       \\note Careful! not a comment"]
+    assert IddField.load(objectName="Some:Object", field_lines=field_lines).properties.note == "Careful! not a comment"
+
+
 def test_memo_warning_says_where(caplog):
     with caplog.at_level(logging.WARNING, logger="IddField"):
         field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\memo Some text"])

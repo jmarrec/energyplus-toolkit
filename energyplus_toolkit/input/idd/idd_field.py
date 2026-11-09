@@ -339,6 +339,27 @@ class IddField:
             raise ValueError(self._format_error(f"\\{tag} takes no value, got '{rest}'"))
         return True
 
+    def _parse_tag_value(self, text: str, tag: str) -> str:
+        """For a tag that takes a value, eg \\units: a tag left alone on its line is an error (a stray tag).
+
+        The '!' comment after the value is dropped.
+        """
+        value = text[len(tag) :].split('!')[0].strip()
+        if not value:
+            raise IddFieldParseError(self._format_error(f"\\{tag} has no value"))
+        return value
+
+    def _add_note_line(self, text: str, tag: str) -> None:
+        """Add a \\note (or \\memo) line to the note, all of it: '!' is just text there. An empty one is discarded, like
+        an empty \\memo in IddObject."""
+        note = text[len(tag) :].strip()
+        if not note:
+            LOG.info(self._format_error(f"\\{tag} line is empty: '\\{text}', discarding it"))
+        elif self.properties.note:
+            self.properties.note += "\n" + note
+        else:
+            self.properties.note = note
+
     def _parse_property(self, text: str):
         if not text:
             return
@@ -366,7 +387,7 @@ class IddField:
         elif index == 'd':
             if lower_text.startswith(tag := "default"):
                 # We'll parse the numeric value later, after we know the field type. For now just store it as a string.
-                self.properties.stringDefault = text[len(tag) :].split('!')[0].strip()
+                self.properties.stringDefault = self._parse_tag_value(text=text, tag=tag)
                 not_handled = False
 
             elif lower_text.startswith(tag := "deprecated"):
@@ -376,7 +397,7 @@ class IddField:
         # === e ===
         elif index == 'e':
             if lower_text.startswith(tag := "external-list"):
-                external_list = text[len(tag) :].split('!')[0].strip()
+                external_list = self._parse_tag_value(text=text, tag=tag)
                 self.properties.externalLists.append(external_list)
                 not_handled = False
 
@@ -389,7 +410,7 @@ class IddField:
         # === i ===
         elif index == 'i':
             if lower_text.startswith(tag := "ip-units"):
-                self.properties.ipUnits = text[len(tag) :].split('!')[0].strip()
+                self.properties.ipUnits = self._parse_tag_value(text=text, tag=tag)
                 not_handled = False
 
         # === k ===
@@ -426,26 +447,18 @@ class IddField:
 
             elif lower_text.startswith(tag := "memo"):
                 LOG.warning(self._format_error("Memo property is deprecated; use Note property instead."))
-                note = text[len(tag) :].strip()
-                if not self.properties.note:
-                    self.properties.note = note
-                else:
-                    self.properties.note += "\n" + note
+                self._add_note_line(text=text, tag=tag)
                 not_handled = False
         # === n ===
         elif index == 'n':
             if lower_text.startswith(tag := "note"):
-                note = text[len(tag) :].strip()
-                if not self.properties.note:
-                    self.properties.note = note
-                else:
-                    self.properties.note += "\n" + note
+                self._add_note_line(text=text, tag=tag)
                 not_handled = False
 
         # === o ===
         elif index == 'o':
             if lower_text.startswith(tag := "object-list"):
-                object_list = text[len(tag) :].strip().split('!')[0].strip()
+                object_list = self._parse_tag_value(text=text, tag=tag)
                 self.properties.objectLists.append(object_list)
                 not_handled = False
 
@@ -455,11 +468,11 @@ class IddField:
                 self.properties.required = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
             elif lower_text.startswith(tag := "reference-class-name"):
-                reference = text[len(tag) :].split('!')[0].strip()
+                reference = self._parse_tag_value(text=text, tag=tag)
                 self.properties.referenceClassNames.append(reference)
                 not_handled = False
             elif lower_text.startswith(tag := "reference"):
-                reference = text[len(tag) :].split('!')[0].strip()
+                reference = self._parse_tag_value(text=text, tag=tag)
                 self.properties.references.append(reference)
                 not_handled = False
             elif lower_text.startswith(tag := "retaincase"):
@@ -469,18 +482,21 @@ class IddField:
         # === t ===
         elif index == 't':
             if lower_text.startswith(tag := "type"):
-                field_type = text[len(tag) :].split('!')[0].strip()
-                self.properties.type = IddFieldType(field_type)
+                field_type = self._parse_tag_value(text=text, tag=tag)
+                try:
+                    self.properties.type = IddFieldType(field_type)
+                except ValueError:
+                    raise ValueError(self._format_error(f"Invalid \\type value '{field_type}'")) from None
                 not_handled = False
 
         # === u ===
         elif index == 'u':
             # Before "units", that it starts with
             if lower_text.startswith(tag := "unitsbasedonfield"):
-                self.properties.unitsBasedOnField = text[len(tag) :].split('!')[0].strip()
+                self.properties.unitsBasedOnField = self._parse_tag_value(text=text, tag=tag)
                 not_handled = False
             elif lower_text.startswith(tag := "units"):
-                self.properties.units = text[len(tag) :].split('!')[0].strip()
+                self.properties.units = self._parse_tag_value(text=text, tag=tag)
                 # m = RE_UNITS_PROPERTY.search(text)
                 not_handled = False
 
