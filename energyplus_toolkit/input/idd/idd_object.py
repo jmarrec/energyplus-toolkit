@@ -6,6 +6,7 @@ from enum import StrEnum
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
 from energyplus_toolkit.input.idd.idd_field import FieldTypeChar, IddField
 from energyplus_toolkit.input.idd.idd_regex import RE_FIELD_START
+from energyplus_toolkit.input.idd.idd_units import UnitsTable
 from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 LOG = logging.getLogger("IddObject")
@@ -446,9 +447,9 @@ class IddObject:
             messages.append(error("Extensible fields do not end with a last field"))
         return messages
 
-    def validate(self) -> list[LogMessage]:
-        """What is wrong with this object and its fields, which parsed fine."""
+    def validate(self, units_table: UnitsTable | None = None) -> list[LogMessage]:
+        """What is wrong with this object and its fields, which parsed fine. Units are checked only with a table."""
         messages = self._validate_extensible_fields() + self._validate_monotonic_field_ids()
         for field in self.fields + self.extensible_fields:
-            messages += field.validate()
+            messages += field.validate(units_table=units_table)
         return messages

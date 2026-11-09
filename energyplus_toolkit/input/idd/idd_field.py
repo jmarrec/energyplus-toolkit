@@ -4,6 +4,7 @@ from enum import IntEnum, StrEnum
 
 from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
 from energyplus_toolkit.input.idd.idd_regex import RE_GROUP_NUMBER
+from energyplus_toolkit.input.idd.idd_units import UnitsTable
 from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 LOG = logging.getLogger("IddField")
@@ -660,6 +661,36 @@ class IddField:
         msg = self._format_error("Field has \\default, remove \\required-field")
         return [LogMessage(tool="idd-required-default", loglevel=LogLevel.WARNING, message=msg)]
 
-    def validate(self) -> list[LogMessage]:
-        """What is wrong with this field, which parsed fine."""
-        return self._validate_type_matches_field_id() + self._validate_not_both_required_and_default()
+    def _validate_units(self, units_table: UnitsTable) -> list[LogMessage]:
+        """\\units and \\ip-units against the units table of the IDD header. Replaces EnergyPlus'
+        scripts/dev/validate_idd_units.py, which only checked \\units."""
+        si, ip = self.properties.units, self.properties.ipUnits
+
+        def message(loglevel: LogLevel, msg: str) -> list[LogMessage]:
+            return [LogMessage(tool="idd-units", loglevel=loglevel, message=self._format_error(msg))]
+
+        if not si:
+            if ip:
+                return message(LogLevel.ERROR, f"\\ip-units '{ip}' without \\units")
+            return []
+        if not units_table.is_known(si):
+            return message(LogLevel.ERROR, f"\\units '{si}' isn't in the units table of the header")
+        if not ip:
+            return []
+        if si in units_table.not_translated:
+            return message(LogLevel.ERROR, f"\\units '{si}' isn't translated, it can't have \\ip-units '{ip}'")
+        if ip == units_table.defaults[si].ip_units:
+            return message(LogLevel.INFO, f"\\ip-units '{ip}' is already the default for \\units '{si}', remove it")
+        if ip not in units_table.ip_units_for(si):
+            expected = ", ".join(units_table.ip_units_for(si))
+            return message(
+                LogLevel.ERROR, f"\\ip-units '{ip}' isn't a conversion of \\units '{si}', expected one of: {expected}"
+            )
+        return []
+
+    def validate(self, units_table: UnitsTable | None = None) -> list[LogMessage]:
+        """What is wrong with this field, which parsed fine. Units are only checked with a units table."""
+        messages = self._validate_type_matches_field_id() + self._validate_not_both_required_and_default()
+        if units_table is not None:
+            messages += self._validate_units(units_table=units_table)
+        return messages
