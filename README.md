@@ -50,6 +50,25 @@ Exit codes: 0 when done, 1 if `--check` found files to reformat, 123 on error.
 Content is never lost: a file or block that can't be reformatted safely (unknown object, text outside a field, IMF or
 parametric file, C++ code building the IDF...) is left unchanged, with a warning.
 
+## Linting IDD files
+
+```shell
+energyplus-toolkit lint idd Energy+.idd
+energyplus-toolkit lint idd --fail-on warning --output-format json idd/
+```
+
+Reports what parses but looks wrong, without changing the file: field ids that aren't consecutive, malformed extensible
+groups, a `\type` that doesn't match the field id, `\units` and `\ip-units` that don't match the units table of the
+header (errors), a `\required-field` with a `\default` (warning), and an `\ip-units` that is already the default (info).
+
+Exit codes: 0 if nothing reached `--fail-on` (`error` by default), 1 otherwise.
+
+Info messages are counted in the summary but only printed with `--verbose` (or `--fail-on info`).
+
+`--output-format`: `text` (default), `json` (one object per message, with the keys of EnergyPlus'
+`scripts/dev/base_hook.py`), or `gha` (GitHub Actions annotations, shown on the PR). The text is colored on a terminal
+and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them on.
+
 ## pre-commit hooks
 
 ```yaml
@@ -64,9 +83,12 @@ parametric file, C++ code building the IDF...) is left unchanged, with a warning
     args: [--idd, idd/Energy+.idd.in, -q]
   - id: energyplus-format-unit-test
     args: [--idd, idd/Energy+.idd.in, -q]
+  - id: energyplus-lint-idd
+    files: ^idd/Energy\+\.idd\.in$
 ```
 
-The IDF and unit test hooks need the IDD to use (`--idd`); the IDD hook doesn't take it.
+The IDF and unit test hooks need the IDD to use (`--idd`); the IDD hooks don't take it.
+The lint hook fails on errors (`--fail-on` to change it), and doesn't change the file.
 `files` is optional: it limits a hook to the paths matching this regex, here the one IDD to format.
 
 **Note:** For unit tests, put the hook before clang-format: reformatting then clang-format is stable.

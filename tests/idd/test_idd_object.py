@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
@@ -473,7 +475,6 @@ SimulationControl,
     [
         (r"\obsolete New=>deleted", "deleted"),
         (r"\obsolete New=>Some:Other:Object", "Some:Other:Object"),
-        (r"\obsolete", ""),
     ],
 )
 def test_parse_idd_object_obsolete(obsolete_line, replacement) -> None:
@@ -585,6 +586,102 @@ def test_parse_idd_object_junk_line_before_next_field_is_an_error(junk) -> None:
     ]
     with pytest.raises(IddFieldParseError, match=f"^In 'Some:Object', field 'Height': Unexpected content.*'{junk}'"):
         IddObject.load(group="Test", object_lines=object_lines)
+
+
+def test_parse_idd_object_field_id_in_a_note_is_not_a_field() -> None:
+    """ElectricLoadCenter:Storage:LiIonNMCBattery (V9-5-0 to V25-1-0): the "N13," in this note was taken for a field."""
+    note = "by the nominal cell voltage (N13, default 3.342V)"
+    object_lines = ["Some:Object,", "  N1 , \\field Height", f"       \\note {note}", "  N2 ; \\field Width"]
+    idd_object = IddObject.load(group="Test", object_lines=object_lines)
+    assert [f.field_id for f in idd_object.fields] == ["N1", "N2"]
+    assert idd_object.fields[0].properties.note == note
+    assert idd_object._original_number_of_fields == 2
+
+
+def test_parse_idd_object_field_id_in_the_note_of_a_compact_line_is_not_a_field() -> None:
+    idd_object = IddObject.load(group="Test", object_lines=["Some:Object,", "  N1, N2;  \\note Same as N3, in the IDD"])
+    assert [f.field_id for f in idd_object.fields] == ["N1", "N2"]
+    assert idd_object._original_number_of_fields == 2
+
+
+@pytest.mark.parametrize(
+    "object_lines, expected",
+    [
+        (["  \\format nope", "  A1 ; \\field Name"], "Unknown \\\\format 'nope'"),
+        (["  \\nope", "  A1 ; \\field Name"], "Unknown property line '\\\\nope'"),
+        (["  \\memo Only a memo"], "No fields found"),
+        (["  \\min-fields abc", "  A1 ; \\field Name"], "Invalid \\\\min-fields value 'abc'"),
+        (["  \\max-fields", "  A1 ; \\field Name"], "Invalid \\\\max-fields value ''"),
+        (["  \\extensible:x", "  A1 ; \\field Name"], "Invalid \\\\extensible: value 'x'"),
+    ],
+)
+def test_parse_idd_object_error_says_where(object_lines, expected) -> None:
+    with pytest.raises(ValueError, match=f"^In 'Some:Object': {expected}"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", *object_lines])
+
+
+def test_parse_idd_object_multiple_begin_extensible_says_where() -> None:
+    object_lines = [
+        "Some:Object,",
+        "  \\extensible:2",
+        "  N1 , \\field V 1",
+        "       \\begin-extensible",
+        "  N2 ; \\field W 1",
+        "       \\begin-extensible",
+    ]
+    with pytest.raises(ValueError, match="^In 'Some:Object': Multiple begin-extensible fields found"):
+        IddObject.load(group="Test", object_lines=object_lines)
+
+
+def test_parse_idd_object_begin_extensible_in_non_extensible_says_where() -> None:
+    object_lines = ["Some:Object,", "  N1 ; \\field Height", "       \\begin-extensible"]
+    with pytest.raises(ValueError, match="^In 'Some:Object', field 'Height': Begin-extensible field found"):
+        IddObject.load(group="Test", object_lines=object_lines)
+
+
+def test_idd_object_cannot_adjust_fields_says_where() -> None:
+    """ZoneHVAC:HybridUnitaryHVAC in V9-1-0: the fields after the first extensible group aren't whole groups."""
+    object_lines = [
+        "Some:Object,",
+        "  \\extensible:2",
+        "  N1 , \\field V 1",
+        "       \\begin-extensible",
+        "  N2 , \\field W 1",
+        "  N3 ; \\field V 2",
+    ]
+    with pytest.raises(ValueError, match="^In 'Some:Object': Cannot adjust number of fields"):
+        str(IddObject.load(group="Test", object_lines=object_lines))
+
+
+@pytest.mark.parametrize("tag", ["extensible:", "format", "max-fields", "min-fields", "obsolete"])
+def test_parse_idd_object_stray_property_is_an_error(tag) -> None:
+    """An object property that takes a value, left alone on its line (see EnergyPlus' check_stray_fields_in_idd.py)."""
+    with pytest.raises(ValueError, match="Some:Object"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\{tag}", "  A1 ; \\field Name"])
+
+
+def test_parse_idd_object_empty_memo_is_discarded(caplog) -> None:
+    """Nothing is lost: an empty \\memo is dropped, with an info message."""
+    with caplog.at_level(logging.INFO, logger="IddObject"):
+        idd_object = IddObject.load(
+            group="Test", object_lines=["Some:Object,", "  \\memo First", "  \\memo", "  A1 ; \\field Name"]
+        )
+    assert idd_object.properties.memo == "First"
+    assert "\\memo" not in str(idd_object).replace("\\memo First", "")
+    assert "In 'Some:Object': \\memo line is empty" in caplog.text
+
+
+@pytest.mark.parametrize("tag", ["required-object", "unique-object", "url-object"])
+@pytest.mark.parametrize("rest", [" BLABLABLA", "s", " ! a comment"])
+def test_parse_idd_object_valueless_flag_with_a_value_is_an_error(tag, rest) -> None:
+    """The text after it would be lost. "s" is a typo: \\unique-objects."""
+    with pytest.raises(ValueError, match=f"^In 'Some:Object': \\\\{tag} takes no value, got '{rest.strip()}'$"):
+        IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\{tag}{rest}", "  A1 ; \\field Name"])
+
+
+@pytest.mark.parametrize("tag", ["required-object", "unique-object", "url-object"])
+def test_parse_idd_object_property_without_value_is_not_stray(tag) -> None:
+    IddObject.load(group="Test", object_lines=["Some:Object,", f"  \\{tag}", "  A1 ; \\field Name"])
 
 
 def test_parse_idd_object_begin_extensible_on_last_field() -> None:

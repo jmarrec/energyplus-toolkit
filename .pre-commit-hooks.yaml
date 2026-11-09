@@ -27,3 +27,11 @@
   language: python
   files: \.unit\.cc$
   require_serial: true
+
+- id: energyplus-lint-idd
+  name: Lint EnergyPlus IDD files
+  description: Report problems in IDD files (field ids, extensible groups, types, units, stray tags), which aren't changed.
+  entry: energyplus-toolkit lint idd
+  language: python
+  files: \.idd(\.in)?$
+  require_serial: true

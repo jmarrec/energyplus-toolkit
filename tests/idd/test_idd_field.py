@@ -5,6 +5,7 @@ import pytest
 from energyplus_toolkit.input.idd.idd_constants import BLOCK_INDENT
 from energyplus_toolkit.input.idd.idd_field import (
     BoundTypes,
+    FieldTypeChar,
     IddField,
     IddFieldParseError,
     IddFieldProperties,
@@ -432,6 +433,66 @@ def test_parse_single_junk_line_after_properties(junk, after_junk):
         IddField.load(objectName="Some:Object", field_lines=field_lines)
 
 
+@pytest.mark.parametrize(
+    "tag", ["autosizable", "autocalculatable", "begin-extensible", "deprecated", "required-field", "retaincase"]
+)
+@pytest.mark.parametrize("rest", [" BLABLABLA", "s", " ! a comment"])
+def test_parse_valueless_flag_with_a_value_is_an_error(tag, rest):
+    """The text after it would be lost. "s" is a typo: \\autosizables."""
+    field_lines = ["  N1 , \\field Name", "       \\type real", f"       \\{tag}{rest}"]
+    with pytest.raises(ValueError, match=f"^In 'Some:Object', field 'Name': \\\\{tag} takes no value"):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "default",
+        "external-list",
+        "ip-units",
+        "key",
+        "maximum",
+        "minimum",
+        "object-list",
+        "reference",
+        "reference-class-name",
+        "type",
+        "units",
+        "unitsBasedOnField",
+    ],
+)
+@pytest.mark.parametrize("field_id, field_type", [("A1", "alpha"), ("N1", "real")])
+def test_parse_stray_property_is_an_error(tag, field_id, field_type):
+    """A property that takes a value, left alone on its line."""
+    field_lines = [f"  {field_id} , \\field Name", f"       \\type {field_type}", f"       \\{tag}"]
+    with pytest.raises((ValueError, IddFieldParseError), match="^In 'Some:Object', field 'Name': "):
+        IddField.load(objectName="Some:Object", field_lines=field_lines)
+
+
+@pytest.mark.parametrize(
+    "tag", ["autosizable", "autocalculatable", "begin-extensible", "deprecated", "required-field", "retaincase"]
+)
+def test_parse_property_without_value_is_not_stray(tag):
+    IddField.load(
+        objectName="Some:Object", field_lines=["  N1 , \\field Name", "       \\type real", f"       \\{tag}"]
+    )
+
+
+@pytest.mark.parametrize("tag", ["note", "memo"])
+def test_empty_note_is_discarded(caplog, tag):
+    """Like an empty \\memo in IddObject: dropped, with an info message."""
+    field_lines = ["  A1 , \\field Name", "       \\note First", f"       \\{tag}", "       \\note Second"]
+    with caplog.at_level(logging.INFO, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=field_lines)
+    assert field.properties.note == "First\nSecond"
+    assert f"In 'Some:Object', field 'Name': \\{tag} line is empty" in caplog.text
+
+
+def test_note_keeps_its_exclamation_mark():
+    field_lines = ["  A1 , \\field Name", "       \\note Careful! not a comment"]
+    assert IddField.load(objectName="Some:Object", field_lines=field_lines).properties.note == "Careful! not a comment"
+
+
 def test_memo_warning_says_where(caplog):
     with caplog.at_level(logging.WARNING, logger="IddField"):
         field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\memo Some text"])
@@ -494,3 +555,36 @@ def test_parse_idd_units_based_on_field():
     assert field.properties.unitsBasedOnField == "A2"
     assert field.properties.units is None
     assert str(field) == ori_text
+
+
+@pytest.mark.parametrize(
+    "field_id, field_type, expected",
+    [
+        ("A1", "alpha", FieldTypeChar.Alpha),
+        ("A12", "choice", FieldTypeChar.Alpha),
+        ("N1", "real", FieldTypeChar.Numeric),
+        ("N12", "choice", FieldTypeChar.Numeric),  # eg WindowMaterial:Screen: the type doesn't say it
+    ],
+)
+def test_field_type_char(field_id, field_type, expected):
+    field_lines = [f"  {field_id} , \\field Name", f"       \\type {field_type}", "       \\key Yes"]
+    field = IddField.load(objectName="Some:Object", field_lines=field_lines)
+    assert field.field_type_char == expected
+
+
+def test_alpha_field_with_keys_and_no_type_is_a_choice(caplog):
+    """Output:Table:ReportPeriod "Report Name" (V22-2-0 to V25-1-0): it has \\key lines, but no \\type choice."""
+    with caplog.at_level(logging.WARNING, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=["  A1 , \\field Name", "       \\key Yes"])
+    assert field.properties.type == IddFieldType.ChoiceType
+    assert "\\type choice" in str(field)
+    assert "In 'Some:Object', field 'Name': Field has keys but no \\type: assuming choice" in caplog.text
+
+
+@pytest.mark.parametrize("field_type", ["alpha", "node"])
+def test_explicit_type_with_keys_is_kept(caplog, field_type):
+    field_lines = ["  A1 , \\field Name", f"       \\type {field_type}", "       \\key Yes"]
+    with caplog.at_level(logging.ERROR, logger="IddField"):
+        field = IddField.load(objectName="Some:Object", field_lines=field_lines)
+    assert field.properties.type == IddFieldType(field_type)
+    assert "Field is not of type choice but has non-empty keys" in caplog.text

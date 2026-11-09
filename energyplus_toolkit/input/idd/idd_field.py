@@ -4,6 +4,8 @@ from enum import IntEnum, StrEnum
 
 from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE, BLOCK_INDENT, format_leading
 from energyplus_toolkit.input.idd.idd_regex import RE_GROUP_NUMBER
+from energyplus_toolkit.input.idd.idd_units import UnitsTable
+from energyplus_toolkit.input.log_message import LogLevel, LogMessage
 
 LOG = logging.getLogger("IddField")
 LOG.setLevel(logging.INFO)
@@ -11,6 +13,25 @@ LOG.setLevel(logging.INFO)
 
 class IddFieldParseError(Exception):
     pass
+
+
+class FieldTypeChar(IntEnum):
+    """Field type character enumeration."""
+
+    UnknownType = -1
+    Alpha = 0
+    Numeric = 1
+
+    @classmethod
+    def from_char(cls, char: str) -> "FieldTypeChar":
+        """Get the FieldTypeChar from a character."""
+        c = char.lower()
+        if c == "a":
+            return cls.Alpha
+        elif c == "n":
+            return cls.Numeric
+        else:
+            return cls.UnknownType
 
 
 class IddFieldType(StrEnum):
@@ -29,6 +50,24 @@ class IddFieldType(StrEnum):
     ExternalListType = "external-list"
     URLType = "url"
     HandleType = "handle"
+
+    @staticmethod
+    def allowable_types_for_field_char(fieldTypeChar: FieldTypeChar) -> set["IddFieldType"]:
+        if fieldTypeChar == FieldTypeChar.Numeric:
+            # Some numeric fields are choices, on purpose
+            return {IddFieldType.IntegerType, IddFieldType.RealType, IddFieldType.ChoiceType}
+        elif fieldTypeChar == FieldTypeChar.Alpha:
+            return {
+                IddFieldType.AlphaType,
+                IddFieldType.ChoiceType,
+                IddFieldType.NodeType,
+                IddFieldType.ObjectListType,
+                IddFieldType.ExternalListType,
+                IddFieldType.URLType,
+                IddFieldType.HandleType,
+            }
+
+        raise ValueError(f"Invalid field type character: {fieldTypeChar}")
 
 
 class BoundTypes(IntEnum):
@@ -260,6 +299,9 @@ class IddField:
         # The field name. For an extensible field, without the group number: see markExtensible
         self.name: str = ""
         self.field_id: str = ""
+        # Alpha or Numeric, from the first letter of field_id.
+        # Not the same as properties.type: an N field can be a choice
+        self.field_type_char: FieldTypeChar = FieldTypeChar.UnknownType
         # Declared without a \field name, on a compact line ("N1, N2, N3,"): written back that way
         self.unnamed: bool = False
         self.objectName: str = objectName  # Name of IddObject to which this field belongs
@@ -286,6 +328,39 @@ class IddField:
         except ValueError:
             raise ValueError(self._format_error(f"Invalid \\{tag} value '{value}'")) from None
 
+    def _parse_valueless_flag(self, text: str, tag: str) -> bool:
+        """For a tag that takes no value: anything after it is an error, it would be lost.
+
+        Comments should go in a \\note anyways, so I also reject that.
+
+        That also catches a typo that starts like the tag, eg \\autosizables.
+        """
+        rest = text[len(tag) :].strip()
+        if rest:
+            raise ValueError(self._format_error(f"\\{tag} takes no value, got '{rest}'"))
+        return True
+
+    def _parse_tag_value(self, text: str, tag: str) -> str:
+        """For a tag that takes a value, eg \\units: a tag left alone on its line is an error (a stray tag).
+
+        The '!' comment after the value is dropped.
+        """
+        value = text[len(tag) :].split('!')[0].strip()
+        if not value:
+            raise IddFieldParseError(self._format_error(f"\\{tag} has no value"))
+        return value
+
+    def _add_note_line(self, text: str, tag: str) -> None:
+        """Add a \\note (or \\memo) line to the note, all of it: '!' is just text there. An empty one is discarded, like
+        an empty \\memo in IddObject."""
+        note = text[len(tag) :].strip()
+        if not note:
+            LOG.info(self._format_error(f"\\{tag} line is empty: '\\{text}', discarding it"))
+        elif self.properties.note:
+            self.properties.note += "\n" + note
+        else:
+            self.properties.note = note
+
     def _parse_property(self, text: str):
         if not text:
             return
@@ -296,40 +371,34 @@ class IddField:
 
         # === a ===
         if index == 'a':
-            if lower_text.startswith("autosizable"):
-                self.properties.autosizable = True
+            if lower_text.startswith(tag := "autosizable"):
+                self.properties.autosizable = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
-            elif lower_text.startswith("autocalculatable"):
-                self.properties.autocalculatable = True
+            elif lower_text.startswith(tag := "autocalculatable"):
+                self.properties.autocalculatable = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === b ===
         elif index == 'b':
-            if lower_text.startswith("begin-extensible"):
-                self.properties.beginExtensible = True
+            if lower_text.startswith(tag := "begin-extensible"):
+                self.properties.beginExtensible = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === d ===
         elif index == 'd':
             if lower_text.startswith(tag := "default"):
-                string_default = text[len(tag) :].split('!')[0].strip()
-                self.properties.stringDefault = string_default
+                # We'll parse the numeric value later, after we know the field type. For now just store it as a string.
+                self.properties.stringDefault = self._parse_tag_value(text=text, tag=tag)
                 not_handled = False
 
-                if self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
-                    if any(x in lower_text for x in ['autosize', 'autocalculate']):
-                        self.properties.numericDefault = AUTOSIZE_VALUE
-                    else:
-                        self.properties.numericDefault = self._parse_float(tag=tag, value=string_default)
-
-            elif lower_text.startswith("deprecated"):
-                self.properties.deprecated = True
+            elif lower_text.startswith(tag := "deprecated"):
+                self.properties.deprecated = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === e ===
         elif index == 'e':
             if lower_text.startswith(tag := "external-list"):
-                external_list = text[len(tag) :].split('!')[0].strip()
+                external_list = self._parse_tag_value(text=text, tag=tag)
                 self.properties.externalLists.append(external_list)
                 not_handled = False
 
@@ -342,7 +411,7 @@ class IddField:
         # === i ===
         elif index == 'i':
             if lower_text.startswith(tag := "ip-units"):
-                self.properties.ipUnits = text[len(tag) :].split('!')[0].strip()
+                self.properties.ipUnits = self._parse_tag_value(text=text, tag=tag)
                 not_handled = False
 
         # === k ===
@@ -359,7 +428,7 @@ class IddField:
         # === m ===
         elif index == 'm':
             if lower_text.startswith(tag := "minimum"):
-                rest = text[len(tag) :].split('!')[0].strip()
+                rest = text[len(tag) :].strip()
                 if rest.startswith('>'):
                     self.properties.minBoundType = BoundTypes.ExclusiveBound
                     rest = rest[1:].strip()
@@ -368,7 +437,7 @@ class IddField:
                 self.properties.minBoundValue = self._parse_float(tag=tag, value=rest)
                 not_handled = False
             elif lower_text.startswith(tag := "maximum"):
-                rest = text[len(tag) :].split('!')[0].strip()
+                rest = text[len(tag) :].strip()
                 if rest.startswith('<'):
                     self.properties.maxBoundType = BoundTypes.ExclusiveBound
                     rest = rest[1:].strip()
@@ -379,61 +448,56 @@ class IddField:
 
             elif lower_text.startswith(tag := "memo"):
                 LOG.warning(self._format_error("Memo property is deprecated; use Note property instead."))
-                note = text[len(tag) :].strip()
-                if not self.properties.note:
-                    self.properties.note = note
-                else:
-                    self.properties.note += "\n" + note
+                self._add_note_line(text=text, tag=tag)
                 not_handled = False
         # === n ===
         elif index == 'n':
             if lower_text.startswith(tag := "note"):
-                note = text[len(tag) :].strip()
-                if not self.properties.note:
-                    self.properties.note = note
-                else:
-                    self.properties.note += "\n" + note
+                self._add_note_line(text=text, tag=tag)
                 not_handled = False
 
         # === o ===
         elif index == 'o':
             if lower_text.startswith(tag := "object-list"):
-                object_list = text[len(tag) :].strip().split('!')[0].strip()
+                object_list = self._parse_tag_value(text=text, tag=tag)
                 self.properties.objectLists.append(object_list)
                 not_handled = False
 
         # === r ===
         elif index == 'r':
-            if lower_text.startswith("required-field"):
-                self.properties.required = True
+            if lower_text.startswith(tag := "required-field"):
+                self.properties.required = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
             elif lower_text.startswith(tag := "reference-class-name"):
-                reference = text[len(tag) :].split('!')[0].strip()
+                reference = self._parse_tag_value(text=text, tag=tag)
                 self.properties.referenceClassNames.append(reference)
                 not_handled = False
             elif lower_text.startswith(tag := "reference"):
-                reference = text[len(tag) :].split('!')[0].strip()
+                reference = self._parse_tag_value(text=text, tag=tag)
                 self.properties.references.append(reference)
                 not_handled = False
-            elif lower_text.startswith("retaincase"):
-                self.properties.retaincase = True
+            elif lower_text.startswith(tag := "retaincase"):
+                self.properties.retaincase = self._parse_valueless_flag(text=text, tag=tag)
                 not_handled = False
 
         # === t ===
         elif index == 't':
             if lower_text.startswith(tag := "type"):
-                field_type = text[len(tag) :].split('!')[0].strip()
-                self.properties.type = IddFieldType(field_type)
+                field_type = self._parse_tag_value(text=text, tag=tag)
+                try:
+                    self.properties.type = IddFieldType(field_type)
+                except ValueError:
+                    raise ValueError(self._format_error(f"Invalid \\type value '{field_type}'")) from None
                 not_handled = False
 
         # === u ===
         elif index == 'u':
             # Before "units", that it starts with
             if lower_text.startswith(tag := "unitsbasedonfield"):
-                self.properties.unitsBasedOnField = text[len(tag) :].split('!')[0].strip()
+                self.properties.unitsBasedOnField = self._parse_tag_value(text=text, tag=tag)
                 not_handled = False
             elif lower_text.startswith(tag := "units"):
-                self.properties.units = text[len(tag) :].split('!')[0].strip()
+                self.properties.units = self._parse_tag_value(text=text, tag=tag)
                 # m = RE_UNITS_PROPERTY.search(text)
                 not_handled = False
 
@@ -467,17 +531,6 @@ class IddField:
 
         line_number += 1
 
-        fieldTypeChar = self.field_id[0]
-
-        # Determine type
-        if fieldTypeChar.lower() == "a":
-            self.properties.type = IddFieldType.AlphaType
-        elif fieldTypeChar.lower() == "n":
-            # Default numerics to real
-            self.properties.type = IddFieldType.RealType
-        else:
-            raise IddFieldParseError(self._format_error(f"Unknown field type identifier found: '{fieldTypeChar}'"))
-
         # Parse each metadata comment line (\keyword ...)
         while line_number < n_lines:
             line = field_lines[line_number]
@@ -495,6 +548,35 @@ class IddField:
             if not line or line.startswith('!'):
                 continue
             raise IddFieldParseError(self._format_error(f"Unexpected content found after field properties: '{line}'"))
+
+        self.field_type_char = FieldTypeChar.from_char(char=self.field_id[0])
+        if self.field_type_char == FieldTypeChar.UnknownType:
+            raise IddFieldParseError(self._format_error(f"Field ID '{self.field_id}' must start with 'A' or 'N'"))
+
+        # No \\type: go by the field id, and the keys
+        if self.properties.type == IddFieldType.UnknownType:
+            if self.field_type_char == FieldTypeChar.Alpha:
+                if self.keys:
+                    LOG.warning(self._format_error("Field has keys but no \\type: assuming choice"))
+                    self.properties.type = IddFieldType.ChoiceType
+                else:
+                    if self.name != self.field_id:  # compact fields ("N1, N2,") can't have a \type
+                        LOG.info(self._format_error("Field has no keys and no \\type: assuming alpha"))
+                    self.properties.type = IddFieldType.AlphaType
+
+            elif self.field_type_char == FieldTypeChar.Numeric:
+                # Default numerics to real
+                if self.name != self.field_id:  # compact fields ("N1, N2,") can't have a \type
+                    LOG.info(self._format_error("Field has no \\type: assuming real"))
+                self.properties.type = IddFieldType.RealType
+
+        # The type can come after the \\default
+        default = self.properties.stringDefault
+        if default is not None and self.properties.type in [IddFieldType.IntegerType, IddFieldType.RealType]:
+            if any(x in default.lower() for x in ['autosize', 'autocalculate']):
+                self.properties.numericDefault = AUTOSIZE_VALUE
+            else:
+                self.properties.numericDefault = self._parse_float(tag="default", value=default)
 
         # Validation
         if self.properties.type == IddFieldType.ChoiceType and not self.keys:
@@ -564,3 +646,51 @@ class IddField:
         for k in self.keys:
             parts.append(str(k))
         return "\n".join(parts)
+
+    def _validate_type_matches_field_id(self) -> list[LogMessage]:
+        """\\type real on an A field, for eg. A choice can be either: some N fields have numeric keys."""
+        if self.properties.type in IddFieldType.allowable_types_for_field_char(fieldTypeChar=self.field_type_char):
+            return []
+        msg = f"Field has \\type {self.properties.type} but field ID '{self.field_id}' is not compatible with that type"
+        return [LogMessage(tool="idd-field-type", loglevel=LogLevel.ERROR, message=self._format_error(msg))]
+
+    def _validate_not_both_required_and_default(self) -> list[LogMessage]:
+        """Validate that the field is not BOTH required-field and has a default."""
+        if not self.properties.required or self.properties.stringDefault is None:
+            return []
+        msg = self._format_error("Field has \\default, remove \\required-field")
+        return [LogMessage(tool="idd-required-default", loglevel=LogLevel.WARNING, message=msg)]
+
+    def _validate_units(self, units_table: UnitsTable) -> list[LogMessage]:
+        """\\units and \\ip-units against the units table of the IDD header. Replaces EnergyPlus'
+        scripts/dev/validate_idd_units.py, which only checked \\units."""
+        si, ip = self.properties.units, self.properties.ipUnits
+
+        def message(loglevel: LogLevel, msg: str) -> list[LogMessage]:
+            return [LogMessage(tool="idd-units", loglevel=loglevel, message=self._format_error(msg))]
+
+        if not si:
+            if ip:
+                return message(LogLevel.ERROR, f"\\ip-units '{ip}' without \\units")
+            return []
+        if not units_table.is_known(si):
+            return message(LogLevel.ERROR, f"\\units '{si}' isn't in the units table of the header")
+        if not ip:
+            return []
+        if si in units_table.not_translated:
+            return message(LogLevel.ERROR, f"\\units '{si}' isn't translated, it can't have \\ip-units '{ip}'")
+        if ip == units_table.defaults[si].ip_units:
+            return message(LogLevel.INFO, f"\\ip-units '{ip}' is already the default for \\units '{si}', remove it")
+        if ip not in units_table.ip_units_for(si):
+            expected = ", ".join(units_table.ip_units_for(si))
+            return message(
+                LogLevel.ERROR, f"\\ip-units '{ip}' isn't a conversion of \\units '{si}', expected one of: {expected}"
+            )
+        return []
+
+    def validate(self, units_table: UnitsTable | None = None) -> list[LogMessage]:
+        """What is wrong with this field, which parsed fine. Units are only checked with a units table."""
+        messages = self._validate_type_matches_field_id() + self._validate_not_both_required_and_default()
+        if units_table is not None:
+            messages += self._validate_units(units_table=units_table)
+        return messages

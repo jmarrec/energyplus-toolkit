@@ -4,6 +4,8 @@ from pathlib import Path
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
+from energyplus_toolkit.input.idd.idd_units import UnitsTable
+from energyplus_toolkit.input.log_message import LogMessage
 
 
 class IddFile:
@@ -22,7 +24,7 @@ class IddFile:
 
     @staticmethod
     def load(path: Path) -> "IddFile":
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         return IddFile.fromString(text=text)
 
     @staticmethod
@@ -66,11 +68,12 @@ class IddFile:
                 if 'IDD_BUILD' in line:
                     self.build = line.split('IDD_BUILD ')[1].strip()
                 continue
-            elif line.startswith(r'\group '):  # m := RE_GROUP.search(line):
+            elif line.startswith(tag := '\\group'):
                 header_closed = True
-                # current_group = m.group(1).strip()
-                current_group = line[len(r'\group ') :].strip()
-                # print(f"{current_group=}")
+                current_group = line[len(tag) :].strip()
+                if not current_group:
+                    # The version line was popped, and line_number is already past this line
+                    raise ValueError(f"\\group has no name on line {line_number + 1}")
                 continue
             else:
                 header_closed = True
@@ -88,6 +91,8 @@ class IddFile:
                 elif ',' in line:
                     object_name = line.split(',')[0].strip()
                     found_closing_line = False
+                else:
+                    raise ValueError(f"Expected an object on line {line_number + 1}, got '{line}'")
                 # print(f"{object_num=}, {object_name=}")
 
                 # Collect full text of the object
@@ -163,6 +168,16 @@ class IddFile:
 
     def __repr__(self):
         return f"IddFile({len(self.objects)} objects)"
+
+    def units_table(self) -> UnitsTable | None:
+        """The units table of the header, None if it has none (eg an old IDD)."""
+        return UnitsTable.parse(self.header)
+
+    def validate(self) -> list[LogMessage]:
+        """What is wrong with the objects of this file, which parsed fine. Units are checked against the units table of
+        the header, if it has one."""
+        units_table = self.units_table()
+        return [message for obj in self.objects for message in obj.validate(units_table=units_table)]
 
     def __str__(self) -> str:
         """Return a formatted IDD file string representation."""
