@@ -73,7 +73,7 @@ and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them on
 
 ```yaml
 - repo: https://github.com/jmarrec/energyplus-toolkit
-  rev: v0.2.2
+  rev: v0.3.0
   hooks:
   - id: energyplus-format-idd
     args: [-q]
