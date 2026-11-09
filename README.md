@@ -41,9 +41,7 @@ energyplus-toolkit format idf --idd Energy+.idd --check testfiles/
 energyplus-toolkit format idf --idd Energy+.idd --diff testfiles/1ZoneUncontrolled.idf
 ```
 
-Options (see `--help`): `--exclude REGEX`, `-j N` workers, `-q` quiet, `-o OUTPUT` (single file, `-` for stdout),
-for IDF / unit tests `--leading N` (spaces before object names) and `--keep-integer-reals` (keep `8` instead of
-writing `8.0` in a real field), and for IDD `--tag-column N` (column where `\field`, `\note`... start, default 7).
+All the options are listed in [Options](#options).
 
 Exit codes: 0 when done, 1 if `--check` found files to reformat, 123 on error.
 
@@ -65,9 +63,46 @@ Exit codes: 0 if nothing reached `--fail-on` (`error` by default), 1 otherwise.
 
 Info messages are counted in the summary but only printed with `--verbose` (or `--fail-on info`).
 
-`--output-format`: `text` (default), `json` (one object per message, with the keys of EnergyPlus'
-`scripts/dev/base_hook.py`), or `gha` (GitHub Actions annotations, shown on the PR). The text is colored on a terminal
-and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them on.
+The text output is colored on a terminal and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them
+on.
+
+## Options
+
+| Option | Commands | `pyproject.toml` key | Default | What it does |
+|---|---|---|---|---|
+| `--idd PATH` | `format idf`, `format unit-test` | `idd` | required | The IDD to read the IDF with. |
+| `--check` | `format` | | | Don't write: list the files that would change, exit 1 if any. |
+| `--diff` | `format` | | | Don't write: print a unified diff of the changes. |
+| `-o PATH`, `--output PATH` | `format` | | | Write to this file instead of in place (`-` for stdout). Only with a single input file. |
+| `--exclude REGEX` | all | `exclude` | | Skip the files found in folders whose path matches. Files given explicitly are always processed. |
+| `-j N`, `--workers N` | `format` | `workers` | number of CPUs | Number of parallel processes. |
+| `-q`, `--quiet` | `format` | `quiet` | `false` | Only print errors and the summary. |
+| `--leading N` | `format idf`, `format unit-test` | `leading` | `0` | Spaces before each object type line. |
+| `--keep-integer-reals` | `format idf`, `format unit-test` | `keep-integer-reals` | `false` | Keep a number written as an integer as is in a real field (`8`, not `8.0`). Always the case for Number of Vertices. |
+| `--tag-column N` | `format idd` | `tag-column` | `7` | Column where the `\` of field and tag lines starts (`\field`, `\note`...). At least 6. |
+| `--fail-on LEVEL` | `lint idd` | `fail-on` | `error` | Exit 1 if a message is at least this severe: `info`, `warning` or `error`. |
+| `--output-format FORMAT` | `lint idd` | `output-format` | `text` | `text`, `json` (one object per message, with the keys of EnergyPlus' `scripts/dev/base_hook.py`) or `gha` (GitHub Actions annotations). |
+| `-v`, `--verbose` | `lint idd` | `verbose` | `false` | Also print the info messages, which are only counted otherwise. |
+| `--config PATH` | all | | closest `pyproject.toml` | Read the defaults from the `[tool.energyplus-toolkit]` table of this file. |
+
+`format` is `format idf`, `format idd` and `format unit-test`.
+
+The IDF field indent (2) and the column of its `!-` comments (27) are only settable from Python, with `FormatOptions`.
+
+## Configuration
+
+The options' defaults can go in the `[tool.energyplus-toolkit]` table of a `pyproject.toml`, like black's
+`[tool.black]`. Its keys are the long option names: each applies to the commands that have that option, and the command
+line wins.
+
+```toml
+[tool.energyplus-toolkit]
+idd = "idd/Energy+.idd.in"  # Relative to the pyproject.toml
+fail-on = "warning"
+```
+
+It's read from the closest `pyproject.toml`, from the current folder up to the repository root, or from `--config PATH`.
+An unknown key is an error. `--check`, `--diff` and `-o` aren't settings: they say what a single run does.
 
 ## pre-commit hooks
 
