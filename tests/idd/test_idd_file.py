@@ -1,3 +1,5 @@
+import pytest
+
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
@@ -192,3 +194,14 @@ def test_idd_file_ends_with_exactly_one_newline():
     assert text.endswith("\n")
     assert not text.endswith("\n\n")
     assert str(IddFile.fromString(text=text)) == text  # stable
+
+
+def test_idd_file_stray_group_is_an_error():
+    """A \\group with no name, left alone on its line (see EnergyPlus' check_stray_fields_in_idd.py)."""
+    with pytest.raises(ValueError, match="group"):
+        IddFile.fromString(text="!IDD_Version 26.1.0\n\n\\group\n\nZone,\n  A1 ; \\field Name\n")
+
+
+def test_idd_file_line_that_is_not_an_object_is_an_error():
+    with pytest.raises(ValueError, match="^Expected an object on line 3, got 'not an object'$"):
+        IddFile.fromString(text="!IDD_Version 26.1.0\n\nnot an object\n")

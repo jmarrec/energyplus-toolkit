@@ -67,11 +67,12 @@ class IddFile:
                 if 'IDD_BUILD' in line:
                     self.build = line.split('IDD_BUILD ')[1].strip()
                 continue
-            elif line.startswith(r'\group '):  # m := RE_GROUP.search(line):
+            elif line.startswith(tag := '\\group'):
                 header_closed = True
-                # current_group = m.group(1).strip()
-                current_group = line[len(r'\group ') :].strip()
-                # print(f"{current_group=}")
+                current_group = line[len(tag) :].strip()
+                if not current_group:
+                    # The version line was popped, and line_number is already past this line
+                    raise ValueError(f"\\group has no name on line {line_number + 1}")
                 continue
             else:
                 header_closed = True
@@ -89,6 +90,8 @@ class IddFile:
                 elif ',' in line:
                     object_name = line.split(',')[0].strip()
                     found_closing_line = False
+                else:
+                    raise ValueError(f"Expected an object on line {line_number + 1}, got '{line}'")
                 # print(f"{object_num=}, {object_name=}")
 
                 # Collect full text of the object
