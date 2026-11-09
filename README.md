@@ -83,9 +83,12 @@ and in GitHub Actions; `NO_COLOR` turns colors off, `FORCE_COLOR` forces them on
     args: [--idd, idd/Energy+.idd.in, -q]
   - id: energyplus-format-unit-test
     args: [--idd, idd/Energy+.idd.in, -q]
+  - id: energyplus-lint-idd
+    files: ^idd/Energy\+\.idd\.in$
 ```
 
-The IDF and unit test hooks need the IDD to use (`--idd`); the IDD hook doesn't take it.
+The IDF and unit test hooks need the IDD to use (`--idd`); the IDD hooks don't take it.
+The lint hook fails on errors (`--fail-on` to change it), and doesn't change the file.
 `files` is optional: it limits a hook to the paths matching this regex, here the one IDD to format.
 
 **Note:** For unit tests, put the hook before clang-format: reformatting then clang-format is stable.
