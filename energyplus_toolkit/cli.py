@@ -180,17 +180,18 @@ def _make_job(args, parser: argparse.ArgumentParser) -> Job:
     if idd_path is not None and not idd_path.is_file():
         parser.error(f"IDD file not found: {idd_path}")
     format_options = DEFAULT_FORMAT_OPTIONS
-    if getattr(args, "idf_leading", None) is not None:
-        if args.idf_leading < 0:
-            parser.error("--leading must be a non-negative integer.")
-        format_options = replace(format_options, leading=args.idf_leading)
+    # FormatOptions checks the values: its error names the option as on the command line
+    for dest, option, field in (
+        ("idf_leading", "--leading", "leading"),
+        ("idd_tag_column", "--tag-column", "idd_tag_column"),
+    ):
+        if (value := getattr(args, dest, None)) is not None:
+            try:
+                format_options = replace(format_options, **{field: value})
+            except ValueError as exc:
+                parser.error(str(exc).replace(field, option, 1))
     if getattr(args, "keep_integer_reals", False):
         format_options = replace(format_options, keep_integer_reals=True)
-    if getattr(args, "idd_tag_column", None) is not None:
-        # Room for the shortest field line start, "  A1, "
-        if args.idd_tag_column < 6:
-            parser.error("--tag-column must be at least 6.")
-        format_options = replace(format_options, idd_tag_column=args.idd_tag_column)
     mode = Mode.CHECK if args.check else Mode.DIFF if args.diff else Mode.WRITE
     return Job(kind=kind, mode=mode, idd_path=idd_path, format_options=format_options)
 

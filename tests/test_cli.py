@@ -208,4 +208,10 @@ def test_reformat_idd_tag_column(tmp_path):
 def test_reformat_idd_tag_column_too_small(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(["format", "idd", "--tag-column", "5", str(tmp_path)])
-    assert "--tag-column must be at least 6" in capsys.readouterr().err
+    assert "--tag-column must be at least 6, got 5" in capsys.readouterr().err
+
+
+def test_reformat_idf_negative_leading(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main(["format", "idf", "--idd", IDD, "--leading", "-1", str(tmp_path)])
+    assert "--leading must be at least 0, got -1" in capsys.readouterr().err

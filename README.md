@@ -42,8 +42,8 @@ energyplus-toolkit format idf --idd Energy+.idd --diff testfiles/1ZoneUncontroll
 ```
 
 Options (see `--help`): `--exclude REGEX`, `-j N` workers, `-q` quiet, `-o OUTPUT` (single file, `-` for stdout),
-and for IDF / unit tests `--leading N` (spaces before object names) and `--keep-integer-reals` (keep `8` instead of
-writing `8.0` in a real field).
+for IDF / unit tests `--leading N` (spaces before object names) and `--keep-integer-reals` (keep `8` instead of
+writing `8.0` in a real field), and for IDD `--tag-column N` (column where `\field`, `\note`... start, default 7).
 
 Exit codes: 0 when done, 1 if `--check` found files to reformat, 123 on error.
 

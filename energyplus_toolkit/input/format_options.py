@@ -24,6 +24,16 @@ class FormatOptions:
     # Column where the "\" of IDD field and tag lines starts (0-based): "  A1 , \field", "       \note"
     idd_tag_column: int = 7
 
+    def __post_init__(self) -> None:
+        """Checked here, so the library and the command line both get an error rather than a broken layout."""
+        for name in ("leading", "indent", "comment_column"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be at least 0, got {getattr(self, name)}")
+        # Room for "  A1, ". A longer field id (A10, N100...) still pushes its "\field" past the column: ljust doesn't
+        # truncate, as with the default 7 and "  A100, \field"
+        if self.idd_tag_column < 6:
+            raise ValueError(f"idd_tag_column must be at least 6, got {self.idd_tag_column}")
+
     @property
     def idf_field_indent(self) -> str:
         """What comes before an IDF field line."""

@@ -66,7 +66,7 @@ class Job:
     kind: Kind
     mode: Mode
     idd_path: Path | None = None
-    format_options: FormatOptions = DEFAULT_FORMAT_OPTIONS  # How IDF (and unit test IDF) is written
+    format_options: FormatOptions = DEFAULT_FORMAT_OPTIONS  # How the IDF, IDD and unit test IDF are laid out
 
 
 @dataclass
