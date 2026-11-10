@@ -217,6 +217,24 @@ def test_reformat_idf_negative_leading(tmp_path, capsys):
     assert "--leading must be at least 0, got -1" in capsys.readouterr().err
 
 
+def test_reformat_idf_indent_and_comment_column(capsys):
+    idf = str(RESOURCES / "1ZoneUncontrolled-V26-1-0.idf")
+    # Both after --leading: the field line at 2 + 4, the "!" at 2 + 40
+    args = ["--leading", "2", "--indent", "4", "--comment-column", "40"]
+    assert main(["format", "idf", "--idd", IDD, *args, "-o", "-", idf]) == 0
+    out = capsys.readouterr().out
+    assert "\n  SimulationControl,\n      No,                                 !- Do Zone Sizing Calculation\n" in out
+    # Too long for the column: two spaces
+    assert main(["format", "idf", "--idd", IDD, "--comment-column", "4", "-o", "-", idf]) == 0
+    assert "\nSimulationControl,\n  No,  !- Do Zone Sizing Calculation\n" in capsys.readouterr().out
+
+
+def test_reformat_idf_negative_comment_column(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main(["format", "idf", "--idd", IDD, "--comment-column", "-1", str(tmp_path)])
+    assert "--comment-column must be at least 0, got -1" in capsys.readouterr().err
+
+
 def test_bad_exclude_regex_is_an_error(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["lint", "idd", "--exclude", "[", "."])

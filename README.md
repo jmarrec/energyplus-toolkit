@@ -78,6 +78,8 @@ on.
 | `-j N`, `--workers N` | `format` | `workers` | number of CPUs | Number of parallel processes. |
 | `-q`, `--quiet` | `format` | `quiet` | `false` | Only print errors and the summary. |
 | `--leading N` | `format idf`, `format unit-test` | `leading` | `0` | Spaces before each object type line. |
+| `--indent N` | `format idf`, `format unit-test` | `indent` | `2` | Spaces before each field line, after `--leading`. |
+| `--comment-column N` | `format idf`, `format unit-test` | `comment-column` | `27` | Column where the `!-` comment of field lines starts, after `--leading`. A value too long for it gets two spaces before its comment. |
 | `--keep-integer-reals` | `format idf`, `format unit-test` | `keep-integer-reals` | `false` | Keep a number written as an integer as is in a real field (`8`, not `8.0`). Always the case for Number of Vertices. |
 | `--tag-column N` | `format idd` | `tag-column` | `7` | Column where the `\` of field and tag lines starts (`\field`, `\note`...). At least 6. |
 | `--fail-on LEVEL` | `lint idd` | `fail-on` | `error` | Exit 1 if a message is at least this severe: `info`, `warning` or `error`. |
@@ -86,8 +88,6 @@ on.
 | `--config PATH` | all | | closest `pyproject.toml` | Read the defaults from the `[tool.energyplus-toolkit]` table of this file. |
 
 `format` is `format idf`, `format idd` and `format unit-test`.
-
-The IDF field indent (2) and the column of its `!-` comments (27) are only settable from Python, with `FormatOptions`.
 
 ## Configuration
 
