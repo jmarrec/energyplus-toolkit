@@ -108,6 +108,25 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
             help=f"Leading spaces before each object-type line (default: {DEFAULT_FORMAT_OPTIONS.leading}).",
         )
         p.add_argument(
+            "--indent",
+            dest="idf_indent",
+            type=int,
+            default=None,
+            metavar="N",
+            help=f"Spaces before each field line, after --leading (default: {DEFAULT_FORMAT_OPTIONS.indent}).",
+        )
+        p.add_argument(
+            "--comment-column",
+            dest="idf_comment_column",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Column where the !- comment of field lines starts, after --leading, or two spaces after the value if "
+                f"it's too long (default: {DEFAULT_FORMAT_OPTIONS.comment_column})."
+            ),
+        )
+        p.add_argument(
             "--keep-integer-reals",
             action="store_true",
             help='Keep a number written as an integer as is in a real field ("8" instead of "8.0").',
@@ -199,6 +218,8 @@ def _make_job(args, parser: argparse.ArgumentParser) -> Job:
     # FormatOptions checks the values: its error names the option as on the command line
     for dest, option, field in (
         ("idf_leading", "--leading", "leading"),
+        ("idf_indent", "--indent", "indent"),
+        ("idf_comment_column", "--comment-column", "comment_column"),
         ("idd_tag_column", "--tag-column", "idd_tag_column"),
     ):
         if (value := getattr(args, dest, None)) is not None:
