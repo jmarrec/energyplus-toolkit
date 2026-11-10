@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME, COMMENT_ONLY_OBJECT_TEXT
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.idd.idd_regex import RE_CLOSING_FIELD, RE_VERSION, RE_VERSION_OBJECT_NAME
@@ -183,7 +184,10 @@ class IddFile:
         return [message for obj in self.objects for message in obj.validate(units_table=units_table)]
 
     def __str__(self) -> str:
-        """Return a formatted IDD file string representation."""
+        return self.to_string()
+
+    def to_string(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
+        """The file as written, laid out according to ``options``."""
         lines: list[str] = [self.header, ""]
         current_group = ""
 
@@ -193,7 +197,7 @@ class IddFile:
             if obj.group != current_group:
                 current_group = obj.group
                 lines.append(f"\\group {current_group}\n")
-            lines.append(str(obj))
+            lines.append(obj.to_string(options))
 
         # Each object ends with a blank line: not the file, which ends with exactly one newline (as pre-commit's
         # end-of-file-fixer wants it)

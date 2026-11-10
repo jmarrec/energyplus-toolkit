@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import pytest
 
+from energyplus_toolkit.input.format_options import FormatOptions
 from energyplus_toolkit.input.idd.idd_constants import COMMENT_ONLY_OBJECT_NAME
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
@@ -289,3 +292,11 @@ def test_idd_file_without_units_table_does_not_check_units():
     )
     assert idd_file.units_table() is None
     assert idd_file.validate() == []
+
+
+def test_idd_file_tag_column_round_trip():
+    """Written with another tag column and read back, the IDD is the same: only the layout changed."""
+    idd_file = IddFile.load(Path(__file__).parent.parent / "resources" / "V26-1-0-Energy+.idd")
+    wide = idd_file.to_string(FormatOptions(idd_tag_column=10))
+    assert "\n          \\note " in wide
+    assert IddFile.fromString(text=wide).to_string() == idd_file.to_string()

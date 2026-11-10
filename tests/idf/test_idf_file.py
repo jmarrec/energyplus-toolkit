@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from energyplus_toolkit.input.format_options import FormatOptions
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idd.idd_object import IddObject
 from energyplus_toolkit.input.idf.idf_file import IdfFile, split_objects_on_one_line
@@ -479,24 +480,17 @@ Zone, ! This is also understood as an object comment
 
 
 # ---------------------------------------------------------------------------
-# Integration: real IDF serialisation with IDF_LEADING=2
+# Integration: real IDF serialisation with leading 2
 # ---------------------------------------------------------------------------
 
 
 def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
-    """Load the 1ZoneUncontrolled IDF, serialise with IDF_LEADING=2, and verify
+    """Load the 1ZoneUncontrolled IDF, serialise with leading 2, and verify
     structural and spot-check properties of the output."""
-    from energyplus_toolkit.input.idf import idf_constants
-
     idf_path = RESOURCES / "1ZoneUncontrolled-V26-1-0.idf"
     idf = IdfFile.load(idf_path, ep_idd)
 
-    original_leading = idf_constants.IDF_LEADING
-    try:
-        idf_constants.IDF_LEADING = 2
-        result = str(idf)
-    finally:
-        idf_constants.IDF_LEADING = original_leading
+    result = idf.to_string(FormatOptions(leading=2))
 
     lines = result.splitlines()
 
@@ -509,7 +503,7 @@ def test_idf_file_str_1zone_uncontrolled_leading2(ep_idd):
     ]
     assert object_type_lines == [], "All non-comment non-blank lines must be indented by 2"
 
-    # Field lines start with 4 spaces (IDF_LEADING=2 + IDF_INDENT=2)
+    # Field lines start with 4 spaces (leading 2 + indent 2)
     field_lines = [line for line in lines if line.startswith("    ") and ("!-" in line)]
     assert len(field_lines) > 0, "Expected field lines with 4-space indent"
     for line in field_lines:

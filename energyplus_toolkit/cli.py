@@ -4,18 +4,21 @@ energyplus-toolkit format idf|idd|unit-test PATH...: works like black, give it f
 reformatted in place, in parallel. Use --check or --diff to only see what would change.
 
 energyplus-toolkit lint idd PATH...: report what is wrong in IDD files, without changing them.
+
+Defaults for the options can be set in the [tool.energyplus-toolkit] table of a pyproject.toml, see config.py.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
+from dataclasses import replace
 from pathlib import Path
 
+from energyplus_toolkit import config
 from energyplus_toolkit.format import runner
 from energyplus_toolkit.format.runner import Job, Kind, Mode
-from energyplus_toolkit.input.idf import idf_constants
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS
 from energyplus_toolkit.input.log_message import LogLevel
 from energyplus_toolkit.lint import idd as lint_idd
 
@@ -26,6 +29,18 @@ DESCRIPTIONS = {
         'Reformat the IDF embedded in EnergyPlus C++ unit tests, in delimited_string({...}) and R"IDF(...)IDF" blocks.'
     ),
 }
+
+
+def _add_config_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--config",
+        type=Path,
+        metavar="PYPROJECT_TOML",
+        help=(
+            f"Read the option defaults from the [tool.{config.TABLE}] table of this file (default: the closest "
+            "pyproject.toml, from the current folder up to the repository root)."
+        ),
+    )
 
 
 def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
@@ -57,7 +72,7 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
     )
     p.add_argument(
         "--exclude",
-        type=re.compile,
+        type=config.regex,
         metavar="REGEX",
         help="Skip files found in folders whose path matches this regex. Files given explicitly are always processed.",
     )
@@ -70,6 +85,19 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
         help="Number of parallel processes (default: number of CPUs).",
     )
     p.add_argument("-q", "--quiet", action="store_true", help="Only print errors and the summary.")
+    _add_config_option(p)
+    if kind is Kind.IDD:
+        p.add_argument(
+            "--tag-column",
+            dest="idd_tag_column",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Column where the \\ of field and tag lines starts, eg \\field and \\note "
+                f"(default: {DEFAULT_FORMAT_OPTIONS.idd_tag_column})."
+            ),
+        )
     if kind is not Kind.IDD:
         p.add_argument(
             "--leading",
@@ -77,7 +105,7 @@ def _add_format_subcommand(subparsers, name: str, kind: Kind) -> None:
             type=int,
             default=None,
             metavar="N",
-            help=f"Leading spaces before each object-type line (default: {idf_constants.IDF_LEADING}).",
+            help=f"Leading spaces before each object-type line (default: {DEFAULT_FORMAT_OPTIONS.leading}).",
         )
         p.add_argument(
             "--keep-integer-reals",
@@ -100,7 +128,7 @@ def _add_lint_idd_subcommand(subparsers) -> None:
     )
     p.add_argument(
         "--exclude",
-        type=re.compile,
+        type=config.regex,
         metavar="REGEX",
         help="Skip files found in folders whose path matches this regex. Files given explicitly are always processed.",
     )
@@ -127,6 +155,7 @@ def _add_lint_idd_subcommand(subparsers) -> None:
         action="store_true",
         help="Also print the info messages, which are only counted otherwise (always printed with --fail-on info).",
     )
+    _add_config_option(p)
 
 
 def _lint(args) -> int:
@@ -166,19 +195,42 @@ def _make_job(args, parser: argparse.ArgumentParser) -> Job:
     idd_path = getattr(args, "idd_path", None)
     if idd_path is not None and not idd_path.is_file():
         parser.error(f"IDD file not found: {idd_path}")
-    constants: list[tuple[str, object]] = []
-    if getattr(args, "idf_leading", None) is not None:
-        if args.idf_leading < 0:
-            parser.error("--leading must be a non-negative integer.")
-        constants.append(("IDF_LEADING", args.idf_leading))
+    format_options = DEFAULT_FORMAT_OPTIONS
+    # FormatOptions checks the values: its error names the option as on the command line
+    for dest, option, field in (
+        ("idf_leading", "--leading", "leading"),
+        ("idd_tag_column", "--tag-column", "idd_tag_column"),
+    ):
+        if (value := getattr(args, dest, None)) is not None:
+            try:
+                format_options = replace(format_options, **{field: value})
+            except ValueError as exc:
+                parser.error(str(exc).replace(field, option, 1))
     if getattr(args, "keep_integer_reals", False):
-        constants.append(("IDF_KEEP_INTEGER_REALS", True))
+        format_options = replace(format_options, keep_integer_reals=True)
     mode = Mode.CHECK if args.check else Mode.DIFF if args.diff else Mode.WRITE
-    return Job(kind=kind, mode=mode, idd_path=idd_path, constants=tuple(constants))
+    return Job(kind=kind, mode=mode, idd_path=idd_path, format_options=format_options)
+
+
+def _apply_config(parser: argparse.ArgumentParser, args_: list[str] | None) -> None:
+    """The [tool.energyplus-toolkit] table of --config or the closest pyproject.toml, as the options' defaults."""
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config", type=Path)
+    known, _ = pre_parser.parse_known_args(args_)
+    if known.config is not None and not known.config.is_file():
+        parser.error(f"--config: file not found: {known.config}")
+    path = known.config or config.find_pyproject(Path.cwd())
+    if path is None:
+        return
+    try:
+        config.apply(parser, config.load(path), path)
+    except config.ConfigError as exc:
+        parser.error(str(exc))
 
 
 def main(args_: list[str] | None = None) -> int:
     parser = get_parser()
+    _apply_config(parser, args_)
     args = parser.parse_args(args_)
 
     for path in args.paths:
@@ -195,7 +247,7 @@ def main(args_: list[str] | None = None) -> int:
         if len(args.paths) != 1 or args.paths[0].is_dir():
             parser.error("-o/--output needs exactly one input file.")
         runner.init_worker(job)
-        text = runner.reformat_text(job.kind, args.paths[0].read_text(encoding="utf-8"))
+        text = runner.reformat_text(job.kind, args.paths[0].read_text(encoding="utf-8"), job.format_options)
         if str(args.output_path) == "-":
             sys.stdout.write(text)
         else:

@@ -23,6 +23,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
 from energyplus_toolkit.input.idd.idd_file import IddFile
 from energyplus_toolkit.input.idf.idf_file import (
     IdfFile,
@@ -141,7 +142,7 @@ def _locate_idf_values(idf_lines: list[str]) -> list[_IdfValue]:
     return values
 
 
-def _format_idf(idf_text: str, idd: IddFile, where: str) -> list[str] | None:
+def _format_idf(idf_text: str, idd: IddFile, where: str, options: FormatOptions) -> list[str] | None:
     """Parse and reformat IDF text, returning the formatted lines without leading/trailing blank lines.
 
     Returns None (and logs a warning) if the text can't be reformatted safely, eg if an object would be lost because
@@ -160,7 +161,7 @@ def _format_idf(idf_text: str, idd: IddFile, where: str) -> list[str] | None:
     if (reason := find_lost_objects(idf_text, idf)) is not None:
         LOG.warning(f"{where}: {reason} — leaving unchanged")
         return None
-    lines = str(idf).splitlines()
+    lines = idf.to_string(options).splitlines()
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
@@ -183,7 +184,7 @@ class Block(ABC):
     def __str__(self) -> str:
         return self.content
 
-    def reformat(self, idd: IddFile) -> str:
+    def reformat(self, idd: IddFile, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         """Return the block's text with any IDF content reformatted. Non-IDF blocks are returned unchanged."""
         return self.content
 
@@ -223,14 +224,14 @@ class PotentialIdfBlock(Block, ABC):
     def _parse_idf_content(self) -> str | None:
         """Return the IDF content, or None if it can't be extracted (the block is then left unchanged)."""
 
-    def reformat(self, idd: IddFile) -> str:
+    def reformat(self, idd: IddFile, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         if self.idf_content is None:
             return self.content
-        reformatted = self._reformat(idd)
+        reformatted = self._reformat(idd, options)
         return self.content if reformatted is None else reformatted
 
     @abstractmethod
-    def _reformat(self, idd: IddFile) -> str | None:
+    def _reformat(self, idd: IddFile, options: FormatOptions) -> str | None:
         """Return the reformatted block text, or None to leave it unchanged."""
 
     def _where(self) -> str:
@@ -331,7 +332,7 @@ class DelimitedStringBlock(PotentialIdfBlock):
                 return None
         return "\n".join(line.strip() for line in idf_lines)
 
-    def _reformat(self, idd: IddFile) -> str | None:
+    def _reformat(self, idd: IddFile, options: FormatOptions) -> str | None:
         assert self.idf_content is not None
         lines = self.content.splitlines(keepends=True)
         if '"' in self.idf_content or "\\" in self.idf_content:
@@ -353,7 +354,7 @@ class DelimitedStringBlock(PotentialIdfBlock):
                 f"{self.closer_indent}}})",
             )
 
-        formatted = _format_idf(self.idf_content, idd, self._where())
+        formatted = _format_idf(self.idf_content, idd, self._where(), options)
         if formatted is None:
             return None
 
@@ -433,7 +434,7 @@ class RawStringBlock(PotentialIdfBlock):
             return None
         return self.content[m_open.end() : close_idx]
 
-    def _reformat(self, idd: IddFile) -> str | None:
+    def _reformat(self, idd: IddFile, options: FormatOptions) -> str | None:
         """Reformat the IDF flush left, with a blank line after R"IDF( and before the (untouched) )IDF" line."""
         assert self.idf_content is not None
         if self.concatenated:
@@ -445,7 +446,7 @@ class RawStringBlock(PotentialIdfBlock):
             return None
         eol = "\r\n" if lines[0].endswith("\r\n") else "\n"
 
-        formatted = _format_idf(self.idf_content, idd, self._where())
+        formatted = _format_idf(self.idf_content, idd, self._where(), options)
         if formatted is None:
             return None
 
@@ -566,9 +567,9 @@ class UnitTestFile:
     def __str__(self) -> str:
         return "".join(str(b) for b in self._blocks)
 
-    def reformat(self, idd: IddFile) -> str:
+    def reformat(self, idd: IddFile, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         """Return the file's text with the IDF content of every IDF block reformatted."""
-        return "".join(b.reformat(idd) for b in self._blocks)
+        return "".join(b.reformat(idd, options) for b in self._blocks)
 
     def _parse(self) -> None:
         """Split the file into blocks, scanning it like a C++ lexer would.

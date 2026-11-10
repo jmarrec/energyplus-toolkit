@@ -2,9 +2,9 @@ import logging
 
 import pytest
 
+from energyplus_toolkit.input.format_options import FormatOptions
 from energyplus_toolkit.input.idd.idd_field import BoundTypes, IddField
 from energyplus_toolkit.input.idd.idd_object import IddObject
-from energyplus_toolkit.input.idf import idf_constants
 from energyplus_toolkit.input.idf.idf_field import (
     ChoiceField,
     DayTypeListField,
@@ -292,7 +292,7 @@ def test_idf_integer_field_set_int_rejects_non_integer(value):
 
 
 # ---------------------------------------------------------------------------
-# Real fields: a number written as an integer can be kept as an integer (idf_constants.IDF_KEEP_INTEGER_REALS)
+# Real fields: a number written as an integer can be kept as an integer (FormatOptions.keep_integer_reals)
 # EnergyPlus stores "8" as an int and "8.0" as a double, which matters when the code reads it with getIntFieldValue
 # ---------------------------------------------------------------------------
 
@@ -300,20 +300,18 @@ REAL_IDD = r"""  N1 , \field Some Real
        \type real"""
 
 
-@pytest.fixture
-def keep_integer_reals(monkeypatch):
-    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+KEEP_INTEGER_REALS = FormatOptions(keep_integer_reals=True)
 
 
 @pytest.mark.parametrize(
     "text, expected",
     [("8", "8"), ("-3", "-3"), ("+2", "2"), ("8.0", "8.0"), ("0.", "0.0"), ("1e3", "1000.0"), ("2.5", "2.5")],
 )
-def test_idf_real_field_keeps_integer_written_as_integer(keep_integer_reals, text, expected):
+def test_idf_real_field_keeps_integer_written_as_integer(text, expected):
     field = RealField(idd_field=IddField.load(objectName="FakeObject", field_lines=REAL_IDD.splitlines()))
     field.setString(text)
-    assert field.value_text() == expected
-    assert field.text().strip().startswith(expected + ",")
+    assert field.value_text(KEEP_INTEGER_REALS) == expected
+    assert field.text(options=KEEP_INTEGER_REALS).strip().startswith(expected + ",")
 
 
 @pytest.mark.parametrize("text, expected", [("8", "8.0"), ("8.0", "8.0"), ("2.5", "2.5")])
@@ -323,11 +321,11 @@ def test_idf_real_field_normalizes_integer_by_default(text, expected):
     assert field.value_text() == expected
 
 
-def test_idf_real_field_set_double_is_not_written_as_integer(keep_integer_reals):
+def test_idf_real_field_set_double_is_not_written_as_integer():
     field = RealField(idd_field=IddField.load(objectName="FakeObject", field_lines=REAL_IDD.splitlines()))
     field.setString("8")
     field.setDouble(8.0)
-    assert field.value_text() == "8.0"
+    assert field.value_text(KEEP_INTEGER_REALS) == "8.0"
 
 
 NUMBER_OF_VERTICES_IDD = r"""  N2 , \field Number of Vertices
@@ -444,11 +442,10 @@ def test_autosize_warning_says_where(caplog):
         ("10000000000000000000000", "10000000000000000000000"),
     ],
 )
-def test_keep_integer_reals_value_text(monkeypatch, value, expected):
-    monkeypatch.setattr(idf_constants, "IDF_KEEP_INTEGER_REALS", True)
+def test_keep_integer_reals_value_text(value, expected):
     field = _field(["  N1 , \\field Value", "       \\type real"])
     field.setString(value)
-    assert field.value_text() == expected
+    assert field.value_text(KEEP_INTEGER_REALS) == expected
 
 
 def test_negative_zero_without_keep_integer_reals():

@@ -191,3 +191,34 @@ def test_reformat_idf_never_loses_content(tmp_path, capsys, text, warning):
     err = capsys.readouterr().err
     assert warning in err
     assert err.splitlines()[-1] == "1 file left unchanged."
+
+
+SMALL_IDD = "!IDD_Version 26.1.0\n\nSome:Object,\n  A1 ; \\field Name\n       \\type alpha\n"
+
+
+def test_reformat_idd_tag_column(tmp_path):
+    path = tmp_path / "small.idd"
+    path.write_text(SMALL_IDD)
+    assert main(["format", "idd", "-q", "--tag-column", "9", str(path)]) == 0
+    assert "  A1   ; \\field Name\n         \\type alpha\n" in path.read_text()
+    assert main(["format", "idd", "--check", "--tag-column", "9", str(path)]) == 0  # stable
+    assert main(["format", "idd", "--check", str(path)]) == 1  # not the default layout
+
+
+def test_reformat_idd_tag_column_too_small(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main(["format", "idd", "--tag-column", "5", str(tmp_path)])
+    assert "--tag-column must be at least 6, got 5" in capsys.readouterr().err
+
+
+def test_reformat_idf_negative_leading(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main(["format", "idf", "--idd", IDD, "--leading", "-1", str(tmp_path)])
+    assert "--leading must be at least 0, got -1" in capsys.readouterr().err
+
+
+def test_bad_exclude_regex_is_an_error(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["lint", "idd", "--exclude", "[", "."])
+    assert exc.value.code == 2
+    assert "argument --exclude: not a valid regular expression: unterminated character set" in capsys.readouterr().err

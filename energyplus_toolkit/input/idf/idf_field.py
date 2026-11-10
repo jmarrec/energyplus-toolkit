@@ -4,15 +4,51 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from energyplus_toolkit.input.format_options import DEFAULT_FORMAT_OPTIONS, FormatOptions
 from energyplus_toolkit.input.idd.idd_constants import AUTOSIZE_VALUE
 from energyplus_toolkit.input.idd.idd_field import BoundTypes, IddField, IddFieldProperties, IddFieldType
-from energyplus_toolkit.input.idf import idf_constants
-from energyplus_toolkit.input.idf.idf_constants import format_idf_field
 
 if TYPE_CHECKING:
     from energyplus_toolkit.input.idf.idf_object import IdfObject
 
 LOG = logging.getLogger("IdfField")
+
+
+def format_idf_field(
+    value: str,
+    is_last_field: bool,
+    field_name: str,
+    comment: str | None = None,
+    units: str | None = None,
+    options: FormatOptions = DEFAULT_FORMAT_OPTIONS,
+) -> str:
+    """Serialize one IDF field value line.
+
+    The indent is ``leading + indent`` spaces. The value and its separator are then padded so that the ``!-`` comment
+    starts at ``leading + comment_column``. When the value is too long to fit, a minimum of two spaces are inserted
+    between the separator and the comment.
+
+    Examples, with the default options (leading 0, indent 2, comment_column 27)::
+
+        format_idf_field("No", False, "Do Zone Sizing Calculation")
+        # "  No,                      !- Do Zone Sizing Calculation"
+
+        format_idf_field("Simple One Zone (Wireframe DXF)", False, "Name")
+        # "  Simple One Zone (Wireframe DXF),  !- Name"
+
+    With leading 2 the same call produces::
+
+        # "    No,                      !- Do Zone Sizing Calculation"
+    """
+    sep = ";" if is_last_field else ","
+    # leading cancels in the padding formula: the comment is always comment_column - indent after the value's start
+    padding = max(2, options.comment_column - options.indent - len(value) - 1)
+    if comment is not None:
+        return f"{options.idf_field_indent}{value}{sep}{' ' * padding}! {comment}"
+    line = f"{options.idf_field_indent}{value}{sep}{' ' * padding}!- {field_name}"
+    if units:
+        line += f" {{{units}}}"
+    return line
 
 
 class NumericMode(StrEnum):
@@ -115,19 +151,20 @@ class IdfField(ABC):
             raise FieldValidationError(self._format_error("Cannot reset a required field with no default value"))
         self._value = None
 
-    def value_text(self) -> str:
+    def value_text(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         """The value as written in the IDF ("" if the field is empty)."""
         v = self.value(return_default=False)
         return "" if v is None else str(v)
 
-    def text(self, is_last_field: bool = False) -> str:
+    def text(self, is_last_field: bool = False, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         """The field's IDF line."""
         return format_idf_field(
-            value=self.value_text(),
+            value=self.value_text(options),
             is_last_field=is_last_field,
             field_name=self.name,
             comment=self.comment,
             units=self.idd_field.properties.units,
+            options=options,
         )
 
     def __repr__(self) -> str:
@@ -355,7 +392,7 @@ class RealField(NumericField):
     def __init__(self, idd_field: IddField, parent: "IdfObject | None" = None, group_index: int | None = None) -> None:
         super().__init__(idd_field=idd_field, parent=parent, group_index=group_index)
         self._value: float | None = None
-        self._written_as_integer = False  # set by setString, see idf_constants.IDF_KEEP_INTEGER_REALS
+        self._written_as_integer = False  # set by setString, see FormatOptions.keep_integer_reals
 
     def setString(self, value: str):
         super().setString(value)
@@ -370,15 +407,11 @@ class RealField(NumericField):
         self._mode = NumericMode.NORMAL
         self._written_as_integer = False
 
-    def value_text(self) -> str:
+    def value_text(self, options: FormatOptions = DEFAULT_FORMAT_OPTIONS) -> str:
         v = self.value(return_default=False)
-        keep_integer = (
-            idf_constants.IDF_KEEP_INTEGER_REALS
-            or self.idd_field.name.lower() in idf_constants.IDF_KEEP_INTEGER_REALS_FIELDS
-        )
-        if keep_integer and self._written_as_integer and isinstance(v, float):
+        if options.keeps_integer(self.idd_field.name) and self._written_as_integer and isinstance(v, float):
             return f"{v:.0f}"  # not str(int(v)): it would lose the sign of -0
-        return super().value_text()
+        return super().value_text(options)
 
     def _parse_number(self, value: str) -> float:
         try:
