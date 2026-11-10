@@ -108,7 +108,7 @@ An unknown key is an error. `--check`, `--diff` and `-o` aren't settings: they s
 
 ```yaml
 - repo: https://github.com/jmarrec/energyplus-toolkit
-  rev: v0.3.0
+  rev: v0.4.0
   hooks:
   - id: energyplus-format-idd
     args: [-q]
